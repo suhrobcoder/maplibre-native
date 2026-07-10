@@ -24,7 +24,14 @@ plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "0.8.0"
 }
 
-include(":MapLibreAndroid", ":MapLibreAndroidTestApp", ":MapLibreAndroidLint")
+include(":MapLibreAndroid", ":MapLibreAndroidTestApp", ":MapLibreAndroidLint", ":MapLibreGltfLayer")
+
+// MapLibreGltfLayer ships with its own test app — include only when present.
+val gltfTestAppDir = file("MapLibreGltfLayer/test-app")
+if (gltfTestAppDir.exists()) {
+    include(":MapLibreGltfLayer-test-app")
+    project(":MapLibreGltfLayer-test-app").projectDir = gltfTestAppDir
+}
 
 rootProject.name = "MapLibreAndroid"
 

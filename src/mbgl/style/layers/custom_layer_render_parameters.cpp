@@ -19,6 +19,7 @@ CustomLayerRenderParameters::CustomLayerRenderParameters(const mbgl::PaintParame
     state.getProjMatrix(projMatrix);
     projectionMatrix = projMatrix;
     nearClippedProjectionMatrix = paintParameters.transformParams.nearClippedProjMatrix;
+    depthRangeSize = paintParameters.depthRangeSize;
 }
 
 } // namespace style

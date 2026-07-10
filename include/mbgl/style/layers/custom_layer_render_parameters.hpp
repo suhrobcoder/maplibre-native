@@ -30,6 +30,11 @@ struct CustomLayerRenderParameters {
     /// A 4×4 matrix representing the map view’s current near clip projection state.
     std::array<double, 16> nearClippedProjectionMatrix;
 
+    /// Upper bound of the depth range used by the map's 3D content (e.g.
+    /// fill-extrusion). A custom layer using OpenGL must render with
+    /// `glDepthRangef(0, depthRangeSize)` to depth-test against that content.
+    double depthRangeSize;
+
     CustomLayerRenderParameters(const PaintParameters&);
 };
 

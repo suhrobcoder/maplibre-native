@@ -1,0 +1,37 @@
+name: publish-gltf-packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Immutable package version
+        required: true
+        default: 13.3.1-gltf.1
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: platform/android
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
+
+      - uses: ./.github/actions/setup-android-ci
+
+      - name: Publish OpenGL packages
+        run: >-
+          ./gradlew
+          :MapLibreAndroid:publishOpenglreleasePublicationToGitHubPackagesRepository
+          :MapLibreGltfLayer:publishGithubOpenglReleasePublicationToGitHubPackagesRepository
+          -PmaplibreGithubVersion=${{ inputs.version }}
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

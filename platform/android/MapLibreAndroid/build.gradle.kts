@@ -230,3 +230,5 @@ configurations {
 
 // intentionally disabled
 // apply(plugin = "maplibre.jacoco-report")
+
+apply(from = rootProject.file("github-packages.gradle.kts"))
