@@ -112,8 +112,7 @@ struct LayerState {
 };
 
 // Transform a point by a column-major 4x4, returning clip-space xyzw.
-inline std::array<double, 4> mat4TransformPoint(const std::array<double, 16>& m,
-                                                double x, double y, double z) {
+inline std::array<double, 4> mat4TransformPoint(const std::array<double, 16>& m, double x, double y, double z) {
     return {
         m[0] * x + m[4] * y + m[8] * z + m[12],
         m[1] * x + m[5] * y + m[9] * z + m[13],
@@ -250,10 +249,22 @@ public:
             const double cr = std::cos(r), sr = std::sin(r);
             // placement = translateZ(altitude) * rotZ(r) * axisSwap * scale(s, s, s*hs)
             const std::array<double, 16> placement = {
-                s * cr,  s * sr,  0.0, 0.0, // X column: glTF right
-                0.0,     0.0,     hs,  0.0, // Y column: glTF up -> map Z (height-scaled)
-                -s * sr, s * cr,  0.0, 0.0, // Z column: glTF back -> map south
-                0.0,     0.0,     item.placement.altitudeM, 1.0,
+                s * cr,
+                s * sr,
+                0.0,
+                0.0, // X column: glTF right
+                0.0,
+                0.0,
+                hs,
+                0.0, // Y column: glTF up -> map Z (height-scaled)
+                -s * sr,
+                s * cr,
+                0.0,
+                0.0, // Z column: glTF back -> map south
+                0.0,
+                0.0,
+                item.placement.altitudeM,
+                1.0,
             };
 
             std::array<double, 16> base;
@@ -273,8 +284,7 @@ public:
             }
 
             for (const auto& gd : gm.drawables) {
-                const Material& mat = gd.material >= 0 ? item.model->materials[gd.material]
-                                                       : kDefaultMaterial;
+                const Material& mat = gd.material >= 0 ? item.model->materials[gd.material] : kDefaultMaterial;
                 if (mat.alphaMode == AlphaMode::Blend) {
                     const auto c = mat4TransformPoint(base, gd.center[0], gd.center[1], gd.center[2]);
                     const double w = c[3] != 0.0 ? c[3] : 1.0;
@@ -286,8 +296,9 @@ public:
         }
 
         if (!blendCalls.empty()) {
-            std::sort(blendCalls.begin(), blendCalls.end(),
-                      [](const BlendCall& a, const BlendCall& b) { return a.depth > b.depth; });
+            std::sort(blendCalls.begin(), blendCalls.end(), [](const BlendCall& a, const BlendCall& b) {
+                return a.depth > b.depth;
+            });
             glEnable(GL_BLEND);
             glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
             glDepthMask(GL_FALSE);
@@ -308,9 +319,18 @@ public:
         glActiveTexture(static_cast<GLenum>(prevActiveTexture));
         glUseProgram(static_cast<GLuint>(prevProgram));
         if (prevDepthTest == GL_FALSE) glDisable(GL_DEPTH_TEST);
-        if (prevCull == GL_TRUE) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
-        if (prevBlend == GL_TRUE) glEnable(GL_BLEND); else glDisable(GL_BLEND);
-        if (prevPolyOffset == GL_TRUE) glEnable(GL_POLYGON_OFFSET_FILL); else glDisable(GL_POLYGON_OFFSET_FILL);
+        if (prevCull == GL_TRUE)
+            glEnable(GL_CULL_FACE);
+        else
+            glDisable(GL_CULL_FACE);
+        if (prevBlend == GL_TRUE)
+            glEnable(GL_BLEND);
+        else
+            glDisable(GL_BLEND);
+        if (prevPolyOffset == GL_TRUE)
+            glEnable(GL_POLYGON_OFFSET_FILL);
+        else
+            glDisable(GL_POLYGON_OFFSET_FILL);
     }
 
     void contextLost() override {
@@ -348,7 +368,9 @@ private:
     // When forceCullBack is true, back faces are always culled regardless of
     // material's doubleSided flag (used to prevent z-fighting for translucent
     // rendering where interior faces would otherwise surface-fight).
-    void drawOne(const GpuDrawable& gd, const Material& mat, const std::array<double, 16>& base,
+    void drawOne(const GpuDrawable& gd,
+                 const Material& mat,
+                 const std::array<double, 16>& base,
                  bool forceCullBack = false) const {
         std::array<double, 16> mvp;
         mat4Multiply(mvp, base, gd.transform);
@@ -406,8 +428,8 @@ private:
             const Texture& tex = model->textures[i];
             glGenTextures(1, &gm.textures[i]);
             glBindTexture(GL_TEXTURE_2D, gm.textures[i]);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tex.width, tex.height, 0,
-                         GL_RGBA, GL_UNSIGNED_BYTE, tex.rgba.data());
+            glTexImage2D(
+                GL_TEXTURE_2D, 0, GL_RGBA8, tex.width, tex.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, tex.rgba.data());
             glGenerateMipmap(GL_TEXTURE_2D);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -434,8 +456,7 @@ private:
             std::array<double, 3> dMin{0, 0, 0}, dMax{0, 0, 0};
             bool dInit = false;
             for (size_t v = 0; v + 2 < d.vertices.size(); v += kFloatsPerVertex) {
-                const auto p = mat4TransformPoint(
-                    d.transform, d.vertices[v], d.vertices[v + 1], d.vertices[v + 2]);
+                const auto p = mat4TransformPoint(d.transform, d.vertices[v], d.vertices[v + 1], d.vertices[v + 2]);
                 if (!dInit) {
                     dMin = {p[0], p[1], p[2]};
                     dMax = dMin;
@@ -465,26 +486,33 @@ private:
             glBindBuffer(GL_ARRAY_BUFFER, gd.vbo);
             glBufferData(GL_ARRAY_BUFFER,
                          static_cast<GLsizeiptr>(d.vertices.size() * sizeof(float)),
-                         d.vertices.data(), GL_STATIC_DRAW);
+                         d.vertices.data(),
+                         GL_STATIC_DRAW);
             glGenBuffers(1, &gd.ebo);
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gd.ebo);
             glBufferData(GL_ELEMENT_ARRAY_BUFFER,
                          static_cast<GLsizeiptr>(d.indices.size() * sizeof(uint32_t)),
-                         d.indices.data(), GL_STATIC_DRAW);
+                         d.indices.data(),
+                         GL_STATIC_DRAW);
             glEnableVertexAttribArray(0);
             glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, kVertexStrideBytes, reinterpret_cast<void*>(0));
             glEnableVertexAttribArray(1);
-            glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, kVertexStrideBytes, reinterpret_cast<void*>(3 * sizeof(float)));
+            glVertexAttribPointer(
+                1, 3, GL_FLOAT, GL_FALSE, kVertexStrideBytes, reinterpret_cast<void*>(3 * sizeof(float)));
             glEnableVertexAttribArray(2);
-            glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, kVertexStrideBytes, reinterpret_cast<void*>(6 * sizeof(float)));
+            glVertexAttribPointer(
+                2, 2, GL_FLOAT, GL_FALSE, kVertexStrideBytes, reinterpret_cast<void*>(6 * sizeof(float)));
             gm.drawables.push_back(gd);
         }
         glBindVertexArray(0);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
-        __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "uploaded model: %zu drawables, %zu textures",
-                            gm.drawables.size(), gm.textures.size());
+        __android_log_print(ANDROID_LOG_INFO,
+                            LOG_TAG,
+                            "uploaded model: %zu drawables, %zu textures",
+                            gm.drawables.size(),
+                            gm.textures.size());
         gpu.emplace(model.get(), std::move(gm));
     }
 
@@ -520,40 +548,46 @@ namespace {
 inline LayerState* stateOf(jlong handle) {
     return reinterpret_cast<std::shared_ptr<LayerState>*>(handle)->get();
 }
-inline Placement placementOf(jdouble lat, jdouble lng, jdouble scale, jdouble rotationDeg, jdouble altitudeM, jfloat opacity, jdouble heightScale = 1.0) {
+inline Placement placementOf(jdouble lat,
+                             jdouble lng,
+                             jdouble scale,
+                             jdouble rotationDeg,
+                             jdouble altitudeM,
+                             jfloat opacity,
+                             jdouble heightScale = 1.0) {
     return Placement{lat, lng, scale, rotationDeg, altitudeM, heightScale, opacity};
 }
 } // namespace
 
-extern "C" JNIEXPORT jlong JNICALL
-Java_org_maplibre_gltf_GltfModelLayer_nativeCreateState(JNIEnv*, jclass) {
+extern "C" JNIEXPORT jlong JNICALL Java_org_maplibre_gltf_GltfModelLayer_nativeCreateState(JNIEnv*, jclass) {
     return reinterpret_cast<jlong>(new std::shared_ptr<LayerState>(std::make_shared<LayerState>()));
 }
 
-extern "C" JNIEXPORT void JNICALL
-Java_org_maplibre_gltf_GltfModelLayer_nativeDestroyState(JNIEnv*, jclass, jlong stateHandle) {
+extern "C" JNIEXPORT void JNICALL Java_org_maplibre_gltf_GltfModelLayer_nativeDestroyState(JNIEnv*,
+                                                                                           jclass,
+                                                                                           jlong stateHandle) {
     delete reinterpret_cast<std::shared_ptr<LayerState>*>(stateHandle);
 }
 
-extern "C" JNIEXPORT jlong JNICALL
-Java_org_maplibre_gltf_GltfModelLayer_nativeCreateHost(JNIEnv*, jclass, jlong stateHandle) {
+extern "C" JNIEXPORT jlong JNICALL Java_org_maplibre_gltf_GltfModelLayer_nativeCreateHost(JNIEnv*,
+                                                                                          jclass,
+                                                                                          jlong stateHandle) {
     return reinterpret_cast<jlong>(
         new GltfMultiModelHost(*reinterpret_cast<std::shared_ptr<LayerState>*>(stateHandle)));
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_org_maplibre_gltf_GltfModelLayer_nativeAddModel(JNIEnv* env,
-                                                     jclass,
-                                                     jlong stateHandle,
-                                                     jstring jid,
-                                                     jlong modelHandle,
-                                                     jdouble lat,
-                                                     jdouble lng,
-                                                     jdouble scale,
-                                                     jdouble rotationDeg,
-                                                     jdouble altitudeM,
-                                                     jfloat opacity,
-                                                     jdouble heightScale) {
+extern "C" JNIEXPORT jboolean JNICALL Java_org_maplibre_gltf_GltfModelLayer_nativeAddModel(JNIEnv* env,
+                                                                                           jclass,
+                                                                                           jlong stateHandle,
+                                                                                           jstring jid,
+                                                                                           jlong modelHandle,
+                                                                                           jdouble lat,
+                                                                                           jdouble lng,
+                                                                                           jdouble scale,
+                                                                                           jdouble rotationDeg,
+                                                                                           jdouble altitudeM,
+                                                                                           jfloat opacity,
+                                                                                           jdouble heightScale) {
     // Takes ownership of the model (Kotlin side clears its pointer).
     std::shared_ptr<Model> model(reinterpret_cast<Model*>(modelHandle));
     const char* idChars = env->GetStringUTFChars(jid, nullptr);
@@ -564,23 +598,23 @@ Java_org_maplibre_gltf_GltfModelLayer_nativeAddModel(JNIEnv* env,
     std::lock_guard<std::mutex> lock(state->mutex);
     const auto [it, inserted] = state->instances.emplace(
         std::move(id),
-        LayerState::Instance{std::move(model), placementOf(lat, lng, scale, rotationDeg, altitudeM, opacity, heightScale)});
+        LayerState::Instance{std::move(model),
+                             placementOf(lat, lng, scale, rotationDeg, altitudeM, opacity, heightScale)});
     return inserted ? JNI_TRUE : JNI_FALSE;
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_org_maplibre_gltf_GltfModelLayer_nativeAddInstance(JNIEnv* env,
-                                                        jclass,
-                                                        jlong stateHandle,
-                                                        jstring jid,
-                                                        jstring jsourceId,
-                                                        jdouble lat,
-                                                        jdouble lng,
-                                                        jdouble scale,
-                                                        jdouble rotationDeg,
-                                                        jdouble altitudeM,
-                                                        jfloat opacity,
-                                                        jdouble heightScale) {
+extern "C" JNIEXPORT jboolean JNICALL Java_org_maplibre_gltf_GltfModelLayer_nativeAddInstance(JNIEnv* env,
+                                                                                              jclass,
+                                                                                              jlong stateHandle,
+                                                                                              jstring jid,
+                                                                                              jstring jsourceId,
+                                                                                              jdouble lat,
+                                                                                              jdouble lng,
+                                                                                              jdouble scale,
+                                                                                              jdouble rotationDeg,
+                                                                                              jdouble altitudeM,
+                                                                                              jfloat opacity,
+                                                                                              jdouble heightScale) {
     const char* idChars = env->GetStringUTFChars(jid, nullptr);
     std::string id(idChars);
     env->ReleaseStringUTFChars(jid, idChars);
@@ -594,22 +628,22 @@ Java_org_maplibre_gltf_GltfModelLayer_nativeAddInstance(JNIEnv* env,
     if (src == state->instances.end()) return JNI_FALSE;
     const auto [it, inserted] = state->instances.emplace(
         std::move(id),
-        LayerState::Instance{src->second.model, placementOf(lat, lng, scale, rotationDeg, altitudeM, opacity, heightScale)});
+        LayerState::Instance{src->second.model,
+                             placementOf(lat, lng, scale, rotationDeg, altitudeM, opacity, heightScale)});
     return inserted ? JNI_TRUE : JNI_FALSE;
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_org_maplibre_gltf_GltfModelLayer_nativeUpdateModel(JNIEnv* env,
-                                                        jclass,
-                                                        jlong stateHandle,
-                                                        jstring jid,
-                                                        jdouble lat,
-                                                        jdouble lng,
-                                                        jdouble scale,
-                                                        jdouble rotationDeg,
-                                                        jdouble altitudeM,
-                                                        jfloat opacity,
-                                                        jdouble heightScale) {
+extern "C" JNIEXPORT jboolean JNICALL Java_org_maplibre_gltf_GltfModelLayer_nativeUpdateModel(JNIEnv* env,
+                                                                                              jclass,
+                                                                                              jlong stateHandle,
+                                                                                              jstring jid,
+                                                                                              jdouble lat,
+                                                                                              jdouble lng,
+                                                                                              jdouble scale,
+                                                                                              jdouble rotationDeg,
+                                                                                              jdouble altitudeM,
+                                                                                              jfloat opacity,
+                                                                                              jdouble heightScale) {
     const char* idChars = env->GetStringUTFChars(jid, nullptr);
     std::string id(idChars);
     env->ReleaseStringUTFChars(jid, idChars);
@@ -622,8 +656,10 @@ Java_org_maplibre_gltf_GltfModelLayer_nativeUpdateModel(JNIEnv* env,
     return JNI_TRUE;
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_org_maplibre_gltf_GltfModelLayer_nativeRemoveModel(JNIEnv* env, jclass, jlong stateHandle, jstring jid) {
+extern "C" JNIEXPORT jboolean JNICALL Java_org_maplibre_gltf_GltfModelLayer_nativeRemoveModel(JNIEnv* env,
+                                                                                              jclass,
+                                                                                              jlong stateHandle,
+                                                                                              jstring jid) {
     const char* idChars = env->GetStringUTFChars(jid, nullptr);
     std::string id(idChars);
     env->ReleaseStringUTFChars(jid, idChars);

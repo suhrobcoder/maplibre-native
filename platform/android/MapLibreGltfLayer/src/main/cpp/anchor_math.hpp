@@ -48,10 +48,22 @@ inline std::array<double, 16> anchorMatrix(const std::array<double, 16>& project
     const double pixelsPerMeter = worldSize / (std::cos(latRad) * 2.0 * kPi * kEarthRadiusM);
 
     const std::array<double, 16> localToWorld = {
-        pixelsPerMeter, 0.0,            0.0, 0.0,
-        0.0,            pixelsPerMeter, 0.0, 0.0,
-        0.0,            0.0,            1.0, 0.0,
-        mx * worldSize, my * worldSize, 0.0, 1.0,
+        pixelsPerMeter,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        pixelsPerMeter,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        mx * worldSize,
+        my * worldSize,
+        0.0,
+        1.0,
     };
     std::array<double, 16> out;
     mat4Multiply(out, projectionMatrix, localToWorld);

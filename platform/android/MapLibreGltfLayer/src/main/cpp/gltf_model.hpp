@@ -41,7 +41,11 @@ struct Drawable {
 
 struct AnimChannel {
     int nodeIndex = -1;
-    enum Path { Translation, Rotation, Scale } path;
+    enum Path {
+        Translation,
+        Rotation,
+        Scale
+    } path;
     std::vector<float> times;
     std::vector<float> values;
 };

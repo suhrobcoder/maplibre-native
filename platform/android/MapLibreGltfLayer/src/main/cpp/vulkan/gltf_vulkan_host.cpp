@@ -46,10 +46,10 @@ constexpr char LOG_TAG[] = "MapLibreGltfLayer";
 // Push-constant structure (matches shader layout)
 // ---------------------------------------------------------------------------
 struct PushConstants {
-    float matrix[16];     // offset 0, 64 bytes
-    float baseColor[4];   // offset 64, 16 bytes
-    float alphaCutoff;    // offset 80, 4 bytes
-    float hasTexture;     // offset 84, 4 bytes — 1.0 if textured, 0.0 otherwise
+    float matrix[16];   // offset 0, 64 bytes
+    float baseColor[4]; // offset 64, 16 bytes
+    float alphaCutoff;  // offset 80, 4 bytes
+    float hasTexture;   // offset 84, 4 bytes — 1.0 if textured, 0.0 otherwise
 };
 static_assert(sizeof(PushConstants) <= 128, "Push constants exceed device limit");
 
@@ -86,8 +86,7 @@ inline std::array<float, 16> toFloat(const std::array<double, 16>& d) {
 }
 
 // Transform a point by a column-major 4x4 in double (used for culling).
-inline std::array<double, 4> mat4TransformPoint(const std::array<double, 16>& m,
-                                                double x, double y, double z) {
+inline std::array<double, 4> mat4TransformPoint(const std::array<double, 16>& m, double x, double y, double z) {
     return {
         m[0] * x + m[4] * y + m[8] * z + m[12],
         m[1] * x + m[5] * y + m[9] * z + m[13],
@@ -99,13 +98,13 @@ inline std::array<double, 4> mat4TransformPoint(const std::array<double, 16>& m,
 // ---------------------------------------------------------------------------
 // Memory type helper
 // ---------------------------------------------------------------------------
-static uint32_t findMemoryType(vk::PhysicalDevice physDev, uint32_t typeBits,
-                                vk::MemoryPropertyFlags props,
-                                const vk::detail::DispatchLoaderDynamic& d) {
+static uint32_t findMemoryType(vk::PhysicalDevice physDev,
+                               uint32_t typeBits,
+                               vk::MemoryPropertyFlags props,
+                               const vk::detail::DispatchLoaderDynamic& d) {
     const auto memProps = physDev.getMemoryProperties(d);
     for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i) {
-        if ((typeBits & (1u << i)) &&
-            (memProps.memoryTypes[i].propertyFlags & props) == props) {
+        if ((typeBits & (1u << i)) && (memProps.memoryTypes[i].propertyFlags & props) == props) {
             return i;
         }
     }
@@ -115,14 +114,14 @@ static uint32_t findMemoryType(vk::PhysicalDevice physDev, uint32_t typeBits,
 // ---------------------------------------------------------------------------
 // Buffer creation helper (returns buffer + device memory)
 // ---------------------------------------------------------------------------
-static std::pair<VkUniq<vk::Buffer>, VkUniq<vk::DeviceMemory>>
-createBuffer(vk::Device device, vk::PhysicalDevice physDev,
-             vk::DeviceSize size, vk::BufferUsageFlags usage,
-             vk::MemoryPropertyFlags memProps,
-             const vk::detail::DispatchLoaderDynamic& d) {
-    const vk::BufferCreateInfo binfo{
-        vk::BufferCreateFlags{}, size, usage, vk::SharingMode::eExclusive
-    };
+static std::pair<VkUniq<vk::Buffer>, VkUniq<vk::DeviceMemory>> createBuffer(
+    vk::Device device,
+    vk::PhysicalDevice physDev,
+    vk::DeviceSize size,
+    vk::BufferUsageFlags usage,
+    vk::MemoryPropertyFlags memProps,
+    const vk::detail::DispatchLoaderDynamic& d) {
+    const vk::BufferCreateInfo binfo{vk::BufferCreateFlags{}, size, usage, vk::SharingMode::eExclusive};
     auto buffer = device.createBufferUnique(binfo, nullptr, d);
     const auto reqs = device.getBufferMemoryRequirements(*buffer, d);
     const uint32_t memType = findMemoryType(physDev, reqs.memoryTypeBits, memProps, d);
@@ -144,66 +143,49 @@ public:
     // initialize() — create shader modules, pipeline layout, descriptor pool
     // -----------------------------------------------------------------------
     void initialize(const mbgl::style::CustomLayerInitParameters& baseParams) override {
-        const auto& params =
-            static_cast<const mbgl::style::vulkan::CustomLayerInitParameters&>(baseParams);
+        const auto& params = static_cast<const mbgl::style::vulkan::CustomLayerInitParameters&>(baseParams);
         dev = params.device;
         physDev = params.physicalDevice;
         disp = &params.dispatcher;
 
         // Create shader modules from embedded SPIR-V
         {
-            const vk::ShaderModuleCreateInfo vci{
-                {}, sizeof(kVertSpirv), kVertSpirv
-            };
+            const vk::ShaderModuleCreateInfo vci{{}, sizeof(kVertSpirv), kVertSpirv};
             auto r = dev.createShaderModuleUnique(vci, nullptr, *disp);
             vertModule = std::move(r);
         }
         {
-            const vk::ShaderModuleCreateInfo fci{
-                {}, sizeof(kFragSpirv), kFragSpirv
-            };
+            const vk::ShaderModuleCreateInfo fci{{}, sizeof(kFragSpirv), kFragSpirv};
             auto r = dev.createShaderModuleUnique(fci, nullptr, *disp);
             fragModule = std::move(r);
         }
 
         // Descriptor set layout: binding 0 = combined image sampler (fragment)
         const vk::DescriptorSetLayoutBinding dslb{
-            0, vk::DescriptorType::eCombinedImageSampler, 1,
-            vk::ShaderStageFlagBits::eFragment
-        };
+            0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment};
         const vk::DescriptorSetLayoutCreateInfo dslci{{}, 1, &dslb};
         descSetLayout = dev.createDescriptorSetLayoutUnique(dslci, nullptr, *disp);
 
         // Pipeline layout: descriptor set + push constants
         const vk::PushConstantRange pcr{
-            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-            0, sizeof(PushConstants)
-        };
-        const vk::PipelineLayoutCreateInfo plci{
-            {}, 1, &*descSetLayout, 1, &pcr
-        };
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, sizeof(PushConstants)};
+        const vk::PipelineLayoutCreateInfo plci{{}, 1, &*descSetLayout, 1, &pcr};
         pipelineLayout = dev.createPipelineLayoutUnique(plci, nullptr, *disp);
 
         // Descriptor pool: one combined image sampler
-        const vk::DescriptorPoolSize dps{
-            vk::DescriptorType::eCombinedImageSampler, kMaxTextures
-        };
-        const vk::DescriptorPoolCreateInfo dpci{
-            {}, kMaxTextures, 1, &dps
-        };
+        const vk::DescriptorPoolSize dps{vk::DescriptorType::eCombinedImageSampler, kMaxTextures};
+        const vk::DescriptorPoolCreateInfo dpci{{}, kMaxTextures, 1, &dps};
         descPool = dev.createDescriptorPoolUnique(dpci, nullptr, *disp);
 
-        __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
-                            "Vulkan host initialized: device=%p",
-                            static_cast<VkDevice>(dev));
+        __android_log_print(
+            ANDROID_LOG_INFO, LOG_TAG, "Vulkan host initialized: device=%p", static_cast<VkDevice>(dev));
     }
 
     // -----------------------------------------------------------------------
     // render() — main draw loop, called once per frame
     // -----------------------------------------------------------------------
     void render(const mbgl::style::CustomLayerRenderParameters& baseParams) override {
-        const auto& params =
-            static_cast<const mbgl::style::vulkan::CustomLayerRenderParameters&>(baseParams);
+        const auto& params = static_cast<const mbgl::style::vulkan::CustomLayerRenderParameters&>(baseParams);
         dev = params.device;
         disp = &params.dispatcher;
         cmd = params.commandBuffer;
@@ -223,9 +205,12 @@ public:
             }
         }
 
-        __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
+        __android_log_print(ANDROID_LOG_INFO,
+                            LOG_TAG,
                             "render: %zu instances, w=%.0f h=%.0f depth=%.2f",
-                            items.size(), params.width, params.height,
+                            items.size(),
+                            params.width,
+                            params.height,
                             params.depthRangeSize);
 
         // Upload new models; free orphaned GPU copies
@@ -253,22 +238,14 @@ public:
         // Set viewport depth range to match fill-extrusion encoding
         const float depthRange = static_cast<float>(params.depthRangeSize);
         const vk::Viewport vp{
-            0.0f, 0.0f,
-            static_cast<float>(params.width), static_cast<float>(params.height),
-            0.0f, depthRange
-        };
-        const vk::Rect2D scissor{
-            {0, 0},
-            {static_cast<uint32_t>(params.width),
-             static_cast<uint32_t>(params.height)}
-        };
+            0.0f, 0.0f, static_cast<float>(params.width), static_cast<float>(params.height), 0.0f, depthRange};
+        const vk::Rect2D scissor{{0, 0}, {static_cast<uint32_t>(params.width), static_cast<uint32_t>(params.height)}};
         cmd.setViewport(0, {vp}, *disp);
         cmd.setScissor(0, {scissor}, *disp);
 
         // Bind pipeline
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline, *disp);
-        __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG,
-            "pipeline bound, drawing %zu items", items.size());
+        __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, "pipeline bound, drawing %zu items", items.size());
 
         // Opaque drawables first, then blended
         struct BlendCall {
@@ -284,33 +261,45 @@ public:
 
             // Anchor-relative MVP
             const std::array<double, 16> anchorMvp = anchorMatrix(
-                params.nearClippedProjectionMatrix,
-                item.placement.lat, item.placement.lng, params.zoom);
+                params.nearClippedProjectionMatrix, item.placement.lat, item.placement.lng, params.zoom);
 
             // glTF axis swap + placement transform (same math as GLES host)
             const double s = item.placement.scale;
             const double r = item.placement.rotationDeg * kPi / 180.0;
             const double cr = std::cos(r), sr = std::sin(r);
             const std::array<double, 16> placement = {
-                s * cr,  s * sr,  0.0, 0.0,
-                0.0,     0.0,     s,   0.0,
-                -s * sr, s * cr,  0.0, 0.0,
-                0.0,     0.0,     item.placement.altitudeM, 1.0,
+                s * cr,
+                s * sr,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                s,
+                0.0,
+                -s * sr,
+                s * cr,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                item.placement.altitudeM,
+                1.0,
             };
 
             std::array<double, 16> base;
             mat4Multiply(base, anchorMvp, placement);
 
             if (isCulled(base, gm)) {
-                __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG,
-                    "FRUSTUM CULLED: lat=%.4f lng=%.4f",
-                    item.placement.lat, item.placement.lng);
+                __android_log_print(ANDROID_LOG_DEBUG,
+                                    LOG_TAG,
+                                    "FRUSTUM CULLED: lat=%.4f lng=%.4f",
+                                    item.placement.lat,
+                                    item.placement.lng);
                 continue;
             }
 
             for (const auto& gd : gm.drawables) {
-                const Material& mat = gd.material >= 0
-                    ? item.model->materials[gd.material] : kDefaultMaterial;
+                const Material& mat = gd.material >= 0 ? item.model->materials[gd.material] : kDefaultMaterial;
                 if (mat.alphaMode == AlphaMode::Blend) {
                     const auto c = mat4TransformPoint(base, gd.center[0], gd.center[1], gd.center[2]);
                     const double w = c[3] != 0.0 ? c[3] : 1.0;
@@ -323,11 +312,11 @@ public:
 
         // Blended pass: sort back-to-front, draw with blending
         if (!blendCalls.empty()) {
-            std::sort(blendCalls.begin(), blendCalls.end(),
-                      [](const BlendCall& a, const BlendCall& b) { return a.depth > b.depth; });
+            std::sort(blendCalls.begin(), blendCalls.end(), [](const BlendCall& a, const BlendCall& b) {
+                return a.depth > b.depth;
+            });
             for (const auto& bc : blendCalls) {
-                const Material& mat = bc.gd->material >= 0
-                    ? bc.model->materials[bc.gd->material] : kDefaultMaterial;
+                const Material& mat = bc.gd->material >= 0 ? bc.model->materials[bc.gd->material] : kDefaultMaterial;
                 drawOne(*bc.gd, mat, bc.base, preRot);
             }
         }
@@ -395,10 +384,11 @@ private:
             // Vertex buffer
             const vk::DeviceSize vertBytes = d.vertices.size() * sizeof(float);
             auto [vb, vbMem] = createBuffer(
-                dev, physDev, vertBytes,
+                dev,
+                physDev,
+                vertBytes,
                 vk::BufferUsageFlagBits::eVertexBuffer,
-                vk::MemoryPropertyFlagBits::eHostVisible |
-                    vk::MemoryPropertyFlagBits::eHostCoherent,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
                 *disp);
             gd.vertexBuffer = std::move(vb);
             gd.vertexMemory = std::move(vbMem);
@@ -411,10 +401,11 @@ private:
             // Index buffer
             const vk::DeviceSize idxBytes = d.indices.size() * sizeof(uint32_t);
             auto [ib, ibMem] = createBuffer(
-                dev, physDev, idxBytes,
+                dev,
+                physDev,
+                idxBytes,
                 vk::BufferUsageFlagBits::eIndexBuffer,
-                vk::MemoryPropertyFlagBits::eHostVisible |
-                    vk::MemoryPropertyFlagBits::eHostCoherent,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
                 *disp);
             gd.indexBuffer = std::move(ib);
             gd.indexMemory = std::move(ibMem);
@@ -436,8 +427,7 @@ private:
             std::array<double, 3> dMin{0, 0, 0}, dMax{0, 0, 0};
             bool dInit = false;
             for (size_t v = 0; v + 2 < d.vertices.size(); v += kFloatsPerVertex) {
-                const auto p = mat4TransformPoint(
-                    d.transform, d.vertices[v], d.vertices[v + 1], d.vertices[v + 2]);
+                const auto p = mat4TransformPoint(d.transform, d.vertices[v], d.vertices[v + 1], d.vertices[v + 2]);
                 if (!dInit) {
                     dMin = {p[0], p[1], p[2]};
                     dMax = dMin;
@@ -464,9 +454,7 @@ private:
             gm.drawables.push_back(std::move(gd));
         }
 
-        __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
-                            "Vulkan uploaded model: %zu drawables",
-                            gm.drawables.size());
+        __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "Vulkan uploaded model: %zu drawables", gm.drawables.size());
         gpu.emplace(model.get(), std::move(gm));
     }
 
@@ -477,22 +465,22 @@ private:
         if (!dev || !disp) return;
 
         // Create image
-        const vk::ImageCreateInfo ici{
-            {}, vk::ImageType::e2D,
-            vk::Format::eR8G8B8A8Unorm,
-            {static_cast<uint32_t>(tex.width), static_cast<uint32_t>(tex.height), 1},
-            1, 1,
-            vk::SampleCountFlagBits::e1,
-            vk::ImageTiling::eLinear,
-            vk::ImageUsageFlagBits::eSampled,
-            vk::SharingMode::eExclusive
-        };
+        const vk::ImageCreateInfo ici{{},
+                                      vk::ImageType::e2D,
+                                      vk::Format::eR8G8B8A8Unorm,
+                                      {static_cast<uint32_t>(tex.width), static_cast<uint32_t>(tex.height), 1},
+                                      1,
+                                      1,
+                                      vk::SampleCountFlagBits::e1,
+                                      vk::ImageTiling::eLinear,
+                                      vk::ImageUsageFlagBits::eSampled,
+                                      vk::SharingMode::eExclusive};
         auto img = dev.createImageUnique(ici, nullptr, *disp);
         const auto imgReqs = dev.getImageMemoryRequirements(*img, *disp);
         const uint32_t memType = findMemoryType(
-            physDev, imgReqs.memoryTypeBits,
-            vk::MemoryPropertyFlagBits::eHostVisible |
-                vk::MemoryPropertyFlagBits::eHostCoherent,
+            physDev,
+            imgReqs.memoryTypeBits,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
             *disp);
         vk::MemoryAllocateInfo mai{imgReqs.size, memType};
         auto imgMem = dev.allocateMemoryUnique(mai, nullptr, *disp);
@@ -512,34 +500,31 @@ private:
         dev.unmapMemory(*imgMem, *disp);
 
         // Image view
-        const vk::ImageViewCreateInfo ivi{
-            {}, *img, vk::ImageViewType::e2D, vk::Format::eR8G8B8A8Unorm,
-            {}, {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
-        };
+        const vk::ImageViewCreateInfo ivi{{},
+                                          *img,
+                                          vk::ImageViewType::e2D,
+                                          vk::Format::eR8G8B8A8Unorm,
+                                          {},
+                                          {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}};
         auto view = dev.createImageViewUnique(ivi, nullptr, *disp);
 
         // Sampler (bilinear, clamp to edge — matches GLES)
-        const vk::SamplerCreateInfo sci{
-            {}, vk::Filter::eLinear, vk::Filter::eLinear,
-            vk::SamplerMipmapMode::eNearest,
-            vk::SamplerAddressMode::eClampToEdge,
-            vk::SamplerAddressMode::eClampToEdge,
-            vk::SamplerAddressMode::eClampToEdge
-        };
+        const vk::SamplerCreateInfo sci{{},
+                                        vk::Filter::eLinear,
+                                        vk::Filter::eLinear,
+                                        vk::SamplerMipmapMode::eNearest,
+                                        vk::SamplerAddressMode::eClampToEdge,
+                                        vk::SamplerAddressMode::eClampToEdge,
+                                        vk::SamplerAddressMode::eClampToEdge};
         auto sampler = dev.createSamplerUnique(sci, nullptr, *disp);
 
         // Descriptor set
-        auto descSets = dev.allocateDescriptorSetsUnique(
-            vk::DescriptorSetAllocateInfo{*descPool, 1, &*descSetLayout}, *disp);
+        auto descSets = dev.allocateDescriptorSetsUnique(vk::DescriptorSetAllocateInfo{*descPool, 1, &*descSetLayout},
+                                                         *disp);
         auto descSet = std::move(descSets[0]);
 
-        const vk::DescriptorImageInfo dii{
-            *sampler, *view, vk::ImageLayout::eShaderReadOnlyOptimal
-        };
-        const vk::WriteDescriptorSet wds{
-            *descSet, 0, 0, 1, vk::DescriptorType::eCombinedImageSampler,
-            &dii
-        };
+        const vk::DescriptorImageInfo dii{*sampler, *view, vk::ImageLayout::eShaderReadOnlyOptimal};
+        const vk::WriteDescriptorSet wds{*descSet, 0, 0, 1, vk::DescriptorType::eCombinedImageSampler, &dii};
         dev.updateDescriptorSets({wds}, {}, *disp);
 
         gd.textureImage = std::move(img);
@@ -561,40 +546,35 @@ private:
         };
 
         // Vertex input: interleaved position(3) + normal(3) + uv(2) = 8 floats
-        const vk::VertexInputBindingDescription bindings[] = {
-            {0, kVertexStrideBytes, vk::VertexInputRate::eVertex}
-        };
+        const vk::VertexInputBindingDescription bindings[] = {{0, kVertexStrideBytes, vk::VertexInputRate::eVertex}};
         const vk::VertexInputAttributeDescription attribs[] = {
             {0, 0, vk::Format::eR32G32B32Sfloat, 0},
             {1, 0, vk::Format::eR32G32B32Sfloat, 3 * sizeof(float)},
             {2, 0, vk::Format::eR32G32Sfloat, 6 * sizeof(float)},
         };
-        const vk::PipelineVertexInputStateCreateInfo vertexInput{
-            {}, 1, bindings, 3, attribs
-        };
+        const vk::PipelineVertexInputStateCreateInfo vertexInput{{}, 1, bindings, 3, attribs};
 
-        const vk::PipelineInputAssemblyStateCreateInfo inputAssembly{
-            {}, vk::PrimitiveTopology::eTriangleList
-        };
+        const vk::PipelineInputAssemblyStateCreateInfo inputAssembly{{}, vk::PrimitiveTopology::eTriangleList};
 
-        const vk::PipelineViewportStateCreateInfo viewportState{
-            {}, 1, nullptr, 1, nullptr
-        };
+        const vk::PipelineViewportStateCreateInfo viewportState{{}, 1, nullptr, 1, nullptr};
 
-        const vk::PipelineRasterizationStateCreateInfo rasterizer{
-            {}, VK_FALSE, VK_FALSE, vk::PolygonMode::eFill,
-            vk::CullModeFlagBits::eBack,
-            vk::FrontFace::eCounterClockwise,
-            VK_FALSE, 0.0f, 0.0f, 0.0f, 1.0f
-        };
+        const vk::PipelineRasterizationStateCreateInfo rasterizer{{},
+                                                                  VK_FALSE,
+                                                                  VK_FALSE,
+                                                                  vk::PolygonMode::eFill,
+                                                                  vk::CullModeFlagBits::eBack,
+                                                                  vk::FrontFace::eCounterClockwise,
+                                                                  VK_FALSE,
+                                                                  0.0f,
+                                                                  0.0f,
+                                                                  0.0f,
+                                                                  1.0f};
 
         const vk::PipelineMultisampleStateCreateInfo multisampling{};
 
         // Depth test ON, LEQUAL, writes ON (matches GLES: depth mask true, LEQUAL)
         const vk::PipelineDepthStencilStateCreateInfo depthStencil{
-            {}, VK_TRUE, VK_TRUE, vk::CompareOp::eLessOrEqual,
-            VK_FALSE, VK_FALSE
-        };
+            {}, VK_TRUE, VK_TRUE, vk::CompareOp::eLessOrEqual, VK_FALSE, VK_FALSE};
 
         // No blend for opaque pass; blend is toggled per drawable by
         // VK_DYNAMIC_STATE_BLEND_CONSTANTS ... actually, we can just always
@@ -611,48 +591,52 @@ private:
             vk::BlendFactor::eOne,
             vk::BlendFactor::eZero,
             vk::BlendOp::eAdd,
-            vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-                vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
+            vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB |
+                vk::ColorComponentFlagBits::eA,
         };
-        const vk::PipelineColorBlendStateCreateInfo colorBlend{
-            {}, VK_FALSE, vk::LogicOp::eCopy, 1, &blendAtt
-        };
+        const vk::PipelineColorBlendStateCreateInfo colorBlend{{}, VK_FALSE, vk::LogicOp::eCopy, 1, &blendAtt};
 
         const vk::DynamicState dynStates[] = {
             vk::DynamicState::eViewport,
             vk::DynamicState::eScissor,
         };
-        const vk::PipelineDynamicStateCreateInfo dynamicState{
-            {}, 2, dynStates
-        };
+        const vk::PipelineDynamicStateCreateInfo dynamicState{{}, 2, dynStates};
 
-        const vk::GraphicsPipelineCreateInfo pci{
-            {}, 2, stages, &vertexInput, &inputAssembly, nullptr,
-            &viewportState, &rasterizer, &multisampling, &depthStencil,
-            &colorBlend, &dynamicState, *pipelineLayout, renderPass
-        };
+        const vk::GraphicsPipelineCreateInfo pci{{},
+                                                 2,
+                                                 stages,
+                                                 &vertexInput,
+                                                 &inputAssembly,
+                                                 nullptr,
+                                                 &viewportState,
+                                                 &rasterizer,
+                                                 &multisampling,
+                                                 &depthStencil,
+                                                 &colorBlend,
+                                                 &dynamicState,
+                                                 *pipelineLayout,
+                                                 renderPass};
 
-        auto result = dev.createGraphicsPipelineUnique(
-            nullptr, pci, nullptr, *disp);
+        auto result = dev.createGraphicsPipelineUnique(nullptr, pci, nullptr, *disp);
         if (result.result != vk::Result::eSuccess) {
-            __android_log_write(ANDROID_LOG_ERROR, LOG_TAG,
-                                "Vulkan pipeline creation failed");
+            __android_log_write(ANDROID_LOG_ERROR, LOG_TAG, "Vulkan pipeline creation failed");
             return;
         }
         pipeline = std::move(result.value);
-        __android_log_write(ANDROID_LOG_INFO, LOG_TAG,
-                            "Vulkan pipeline created");
+        __android_log_write(ANDROID_LOG_INFO, LOG_TAG, "Vulkan pipeline created");
     }
 
     // -----------------------------------------------------------------------
     // Issue one indexed draw call
     // -----------------------------------------------------------------------
-    void drawOne(const GpuDrawable& gd, const Material& mat,
-                 const std::array<double, 16>& base, float preRot) {
+    void drawOne(const GpuDrawable& gd, const Material& mat, const std::array<double, 16>& base, float preRot) {
         if (!cmd || !dev || !disp) return;
-        __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG,
-            "drawOne: idxCount=%u mat=%d tex=%d",
-            gd.indexCount, gd.material, gd.descriptorSet ? 1 : 0);
+        __android_log_print(ANDROID_LOG_DEBUG,
+                            LOG_TAG,
+                            "drawOne: idxCount=%u mat=%d tex=%d",
+                            gd.indexCount,
+                            gd.material,
+                            gd.descriptorSet ? 1 : 0);
 
         // Compose MVP = base * node transform
         std::array<double, 16> mvpD;
@@ -664,10 +648,22 @@ private:
             const float cr = std::cos(preRot);
             const float sr = std::sin(preRot);
             const std::array<double, 16> rotZ = {
-                cr,  sr,  0.0, 0.0,
-                -sr, cr,  0.0, 0.0,
-                0.0, 0.0, 1.0, 0.0,
-                0.0, 0.0, 0.0, 1.0,
+                cr,
+                sr,
+                0.0,
+                0.0,
+                -sr,
+                cr,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
             };
             std::array<double, 16> tmp;
             mat4Multiply(tmp, rotZ, mvpD);
@@ -683,21 +679,21 @@ private:
         pc.hasTexture = (gd.descriptorSet) ? 1.0f : 0.0f;
 
         cmd.pushConstants(*pipelineLayout,
-                           vk::ShaderStageFlagBits::eVertex |
-                               vk::ShaderStageFlagBits::eFragment,
-                           0, sizeof(PushConstants), &pc, *disp);
+                          vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+                          0,
+                          sizeof(PushConstants),
+                          &pc,
+                          *disp);
 
         // Bind descriptor set (texture) if present
         if (gd.descriptorSet) {
-            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                    *pipelineLayout, 0, {*gd.descriptorSet},
-                                    {}, *disp);
+            cmd.bindDescriptorSets(
+                vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0, {*gd.descriptorSet}, {}, *disp);
         }
 
         // Bind buffers
         cmd.bindVertexBuffers(0, {*gd.vertexBuffer}, {0}, *disp);
-        cmd.bindIndexBuffer(*gd.indexBuffer, 0,
-                             vk::IndexType::eUint32, *disp);
+        cmd.bindIndexBuffer(*gd.indexBuffer, 0, vk::IndexType::eUint32, *disp);
 
         // Draw
         cmd.drawIndexed(gd.indexCount, 1, 0, 0, 0, *disp);
@@ -729,9 +725,7 @@ private:
     // -----------------------------------------------------------------------
     // Release all GPU resources
     // -----------------------------------------------------------------------
-    void releaseGpuModel(GpuModel& gm) {
-        gm.drawables.clear();
-    }
+    void releaseGpuModel(GpuModel& gm) { gm.drawables.clear(); }
 
     void releaseAll() {
         gpu.clear();
@@ -782,38 +776,38 @@ namespace {
 inline LayerState* stateOf(jlong handle) {
     return reinterpret_cast<std::shared_ptr<LayerState>*>(handle)->get();
 }
-inline Placement placementOf(jdouble lat, jdouble lng, jdouble scale,
-                              jdouble rotationDeg, jdouble altitudeM) {
+inline Placement placementOf(jdouble lat, jdouble lng, jdouble scale, jdouble rotationDeg, jdouble altitudeM) {
     return Placement{lat, lng, scale, rotationDeg, altitudeM};
 }
 } // namespace
 
-extern "C" JNIEXPORT jlong JNICALL
-Java_org_maplibre_gltf_GltfModelLayer_nativeCreateState(JNIEnv*, jclass) {
-    return reinterpret_cast<jlong>(
-        new std::shared_ptr<LayerState>(std::make_shared<LayerState>()));
+extern "C" JNIEXPORT jlong JNICALL Java_org_maplibre_gltf_GltfModelLayer_nativeCreateState(JNIEnv*, jclass) {
+    return reinterpret_cast<jlong>(new std::shared_ptr<LayerState>(std::make_shared<LayerState>()));
 }
 
-extern "C" JNIEXPORT void JNICALL
-Java_org_maplibre_gltf_GltfModelLayer_nativeDestroyState(JNIEnv*, jclass,
-                                                          jlong stateHandle) {
+extern "C" JNIEXPORT void JNICALL Java_org_maplibre_gltf_GltfModelLayer_nativeDestroyState(JNIEnv*,
+                                                                                           jclass,
+                                                                                           jlong stateHandle) {
     delete reinterpret_cast<std::shared_ptr<LayerState>*>(stateHandle);
 }
 
-extern "C" JNIEXPORT jlong JNICALL
-Java_org_maplibre_gltf_GltfModelLayer_nativeCreateHost(JNIEnv*, jclass,
-                                                        jlong stateHandle) {
+extern "C" JNIEXPORT jlong JNICALL Java_org_maplibre_gltf_GltfModelLayer_nativeCreateHost(JNIEnv*,
+                                                                                          jclass,
+                                                                                          jlong stateHandle) {
     return reinterpret_cast<jlong>(
-        new GltfVulkanMultiModelHost(
-            *reinterpret_cast<std::shared_ptr<LayerState>*>(stateHandle)));
+        new GltfVulkanMultiModelHost(*reinterpret_cast<std::shared_ptr<LayerState>*>(stateHandle)));
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_org_maplibre_gltf_GltfModelLayer_nativeAddModel(
-    JNIEnv* env, jclass, jlong stateHandle,
-    jstring jid, jlong modelHandle,
-    jdouble lat, jdouble lng, jdouble scale,
-    jdouble rotationDeg, jdouble altitudeM) {
+extern "C" JNIEXPORT jboolean JNICALL Java_org_maplibre_gltf_GltfModelLayer_nativeAddModel(JNIEnv* env,
+                                                                                           jclass,
+                                                                                           jlong stateHandle,
+                                                                                           jstring jid,
+                                                                                           jlong modelHandle,
+                                                                                           jdouble lat,
+                                                                                           jdouble lng,
+                                                                                           jdouble scale,
+                                                                                           jdouble rotationDeg,
+                                                                                           jdouble altitudeM) {
     std::shared_ptr<const Model> model(reinterpret_cast<Model*>(modelHandle));
     const char* idChars = env->GetStringUTFChars(jid, nullptr);
     std::string id(idChars);
@@ -822,18 +816,20 @@ Java_org_maplibre_gltf_GltfModelLayer_nativeAddModel(
     LayerState* state = stateOf(stateHandle);
     std::lock_guard<std::mutex> lock(state->mutex);
     const auto [it, inserted] = state->instances.emplace(
-        std::move(id),
-        LayerState::Instance{std::move(model),
-                             placementOf(lat, lng, scale, rotationDeg, altitudeM)});
+        std::move(id), LayerState::Instance{std::move(model), placementOf(lat, lng, scale, rotationDeg, altitudeM)});
     return inserted ? JNI_TRUE : JNI_FALSE;
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_org_maplibre_gltf_GltfModelLayer_nativeAddInstance(
-    JNIEnv* env, jclass, jlong stateHandle,
-    jstring jid, jstring jsourceId,
-    jdouble lat, jdouble lng, jdouble scale,
-    jdouble rotationDeg, jdouble altitudeM) {
+extern "C" JNIEXPORT jboolean JNICALL Java_org_maplibre_gltf_GltfModelLayer_nativeAddInstance(JNIEnv* env,
+                                                                                              jclass,
+                                                                                              jlong stateHandle,
+                                                                                              jstring jid,
+                                                                                              jstring jsourceId,
+                                                                                              jdouble lat,
+                                                                                              jdouble lng,
+                                                                                              jdouble scale,
+                                                                                              jdouble rotationDeg,
+                                                                                              jdouble altitudeM) {
     const char* idChars = env->GetStringUTFChars(jid, nullptr);
     std::string id(idChars);
     env->ReleaseStringUTFChars(jid, idChars);
@@ -846,18 +842,19 @@ Java_org_maplibre_gltf_GltfModelLayer_nativeAddInstance(
     const auto src = state->instances.find(sourceId);
     if (src == state->instances.end()) return JNI_FALSE;
     const auto [it, inserted] = state->instances.emplace(
-        std::move(id),
-        LayerState::Instance{src->second.model,
-                             placementOf(lat, lng, scale, rotationDeg, altitudeM)});
+        std::move(id), LayerState::Instance{src->second.model, placementOf(lat, lng, scale, rotationDeg, altitudeM)});
     return inserted ? JNI_TRUE : JNI_FALSE;
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_org_maplibre_gltf_GltfModelLayer_nativeUpdateModel(
-    JNIEnv* env, jclass, jlong stateHandle,
-    jstring jid,
-    jdouble lat, jdouble lng, jdouble scale,
-    jdouble rotationDeg, jdouble altitudeM) {
+extern "C" JNIEXPORT jboolean JNICALL Java_org_maplibre_gltf_GltfModelLayer_nativeUpdateModel(JNIEnv* env,
+                                                                                              jclass,
+                                                                                              jlong stateHandle,
+                                                                                              jstring jid,
+                                                                                              jdouble lat,
+                                                                                              jdouble lng,
+                                                                                              jdouble scale,
+                                                                                              jdouble rotationDeg,
+                                                                                              jdouble altitudeM) {
     const char* idChars = env->GetStringUTFChars(jid, nullptr);
     std::string id(idChars);
     env->ReleaseStringUTFChars(jid, idChars);
@@ -870,9 +867,10 @@ Java_org_maplibre_gltf_GltfModelLayer_nativeUpdateModel(
     return JNI_TRUE;
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_org_maplibre_gltf_GltfModelLayer_nativeRemoveModel(
-    JNIEnv* env, jclass, jlong stateHandle, jstring jid) {
+extern "C" JNIEXPORT jboolean JNICALL Java_org_maplibre_gltf_GltfModelLayer_nativeRemoveModel(JNIEnv* env,
+                                                                                              jclass,
+                                                                                              jlong stateHandle,
+                                                                                              jstring jid) {
     const char* idChars = env->GetStringUTFChars(jid, nullptr);
     std::string id(idChars);
     env->ReleaseStringUTFChars(jid, idChars);

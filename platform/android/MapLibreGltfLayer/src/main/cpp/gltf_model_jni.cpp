@@ -20,8 +20,7 @@ maplibre_gltf::Model* asModel(jlong handle) {
 
 extern "C" {
 
-JNIEXPORT jlong JNICALL
-Java_org_maplibre_gltf_GltfModel_nativeLoadFromFile(JNIEnv* env, jclass, jstring jpath) {
+JNIEXPORT jlong JNICALL Java_org_maplibre_gltf_GltfModel_nativeLoadFromFile(JNIEnv* env, jclass, jstring jpath) {
     const char* path = env->GetStringUTFChars(jpath, nullptr);
     std::string error;
     auto model = maplibre_gltf::loadModelFromFile(path, error);
@@ -33,8 +32,7 @@ Java_org_maplibre_gltf_GltfModel_nativeLoadFromFile(JNIEnv* env, jclass, jstring
     return reinterpret_cast<jlong>(model.release());
 }
 
-JNIEXPORT jlong JNICALL
-Java_org_maplibre_gltf_GltfModel_nativeLoadFromBytes(JNIEnv* env, jclass, jbyteArray jbytes) {
+JNIEXPORT jlong JNICALL Java_org_maplibre_gltf_GltfModel_nativeLoadFromBytes(JNIEnv* env, jclass, jbyteArray jbytes) {
     jsize size = env->GetArrayLength(jbytes);
     jbyte* bytes = env->GetByteArrayElements(jbytes, nullptr);
     std::string error;
@@ -48,33 +46,27 @@ Java_org_maplibre_gltf_GltfModel_nativeLoadFromBytes(JNIEnv* env, jclass, jbyteA
     return reinterpret_cast<jlong>(model.release());
 }
 
-JNIEXPORT void JNICALL
-Java_org_maplibre_gltf_GltfModel_nativeDestroy(JNIEnv*, jclass, jlong handle) {
+JNIEXPORT void JNICALL Java_org_maplibre_gltf_GltfModel_nativeDestroy(JNIEnv*, jclass, jlong handle) {
     delete asModel(handle);
 }
 
-JNIEXPORT jint JNICALL
-Java_org_maplibre_gltf_GltfModel_nativeDrawableCount(JNIEnv*, jclass, jlong handle) {
+JNIEXPORT jint JNICALL Java_org_maplibre_gltf_GltfModel_nativeDrawableCount(JNIEnv*, jclass, jlong handle) {
     return static_cast<jint>(asModel(handle)->drawables.size());
 }
 
-JNIEXPORT jint JNICALL
-Java_org_maplibre_gltf_GltfModel_nativeMaterialCount(JNIEnv*, jclass, jlong handle) {
+JNIEXPORT jint JNICALL Java_org_maplibre_gltf_GltfModel_nativeMaterialCount(JNIEnv*, jclass, jlong handle) {
     return static_cast<jint>(asModel(handle)->materials.size());
 }
 
-JNIEXPORT jint JNICALL
-Java_org_maplibre_gltf_GltfModel_nativeTextureCount(JNIEnv*, jclass, jlong handle) {
+JNIEXPORT jint JNICALL Java_org_maplibre_gltf_GltfModel_nativeTextureCount(JNIEnv*, jclass, jlong handle) {
     return static_cast<jint>(asModel(handle)->textures.size());
 }
 
-JNIEXPORT jlong JNICALL
-Java_org_maplibre_gltf_GltfModel_nativeVertexCount(JNIEnv*, jclass, jlong handle) {
+JNIEXPORT jlong JNICALL Java_org_maplibre_gltf_GltfModel_nativeVertexCount(JNIEnv*, jclass, jlong handle) {
     return static_cast<jlong>(asModel(handle)->totalVertices());
 }
 
-JNIEXPORT jlong JNICALL
-Java_org_maplibre_gltf_GltfModel_nativeIndexCount(JNIEnv*, jclass, jlong handle) {
+JNIEXPORT jlong JNICALL Java_org_maplibre_gltf_GltfModel_nativeIndexCount(JNIEnv*, jclass, jlong handle) {
     return static_cast<jlong>(asModel(handle)->totalIndices());
 }
 

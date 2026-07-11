@@ -39,9 +39,7 @@ void mercator01(double lat, double lng, double& outX, double& outY) {
 }
 
 // Column-major 4x4 multiply: out = a * b.
-void mat4Multiply(std::array<double, 16>& out,
-                  const std::array<double, 16>& a,
-                  const std::array<double, 16>& b) {
+void mat4Multiply(std::array<double, 16>& out, const std::array<double, 16>& a, const std::array<double, 16>& b) {
     for (int col = 0; col < 4; ++col) {
         for (int row = 0; row < 4; ++row) {
             double sum = 0.0;
@@ -85,7 +83,8 @@ class GltfSpikeLayer final : public mbgl::style::CustomLayerHost {
 public:
     // Anchor for the spike: a recognizable location. TestApp centers here.
     GltfSpikeLayer(double lat, double lng)
-        : anchorLat(lat), anchorLng(lng) {}
+        : anchorLat(lat),
+          anchorLng(lng) {}
 
     void initialize(const mbgl::style::CustomLayerInitParameters&) override {
         __android_log_write(ANDROID_LOG_INFO, LOG_TAG, "initialize");
@@ -107,9 +106,15 @@ public:
         // 300 m wide along east/west, 300 m tall along the up (Z) axis.
         // (Spike scale: large enough to be clearly visible at city zoom.)
         const GLfloat vertices[] = {
-            -150.0f, 0.0f, 0.0f,   // base west
-            150.0f,  0.0f, 0.0f,   // base east
-            0.0f,    0.0f, 300.0f, // apex up
+            -150.0f,
+            0.0f,
+            0.0f, // base west
+            150.0f,
+            0.0f,
+            0.0f, // base east
+            0.0f,
+            0.0f,
+            300.0f, // apex up
         };
         glGenBuffers(1, &buffer);
         glBindBuffer(GL_ARRAY_BUFFER, buffer);
@@ -125,16 +130,27 @@ public:
         const double anchorPx = mx * worldSize;
         const double anchorPy = my * worldSize;
         const double latRad = anchorLat * kPi / 180.0;
-        const double pixelsPerMeter =
-            worldSize / (std::cos(latRad) * 2.0 * kPi * kEarthRadiusM);
+        const double pixelsPerMeter = worldSize / (std::cos(latRad) * 2.0 * kPi * kEarthRadiusM);
 
         // localToWorld = translate(anchorPx, anchorPy, 0) * scale(ppm, ppm, 1)
         // Horizontal meters -> pixels via ppm; Z left in meters (column-major).
         std::array<double, 16> localToWorld = {
-            pixelsPerMeter, 0.0,            0.0, 0.0,
-            0.0,            pixelsPerMeter, 0.0, 0.0,
-            0.0,            0.0,            1.0, 0.0,
-            anchorPx,       anchorPy,       0.0, 1.0,
+            pixelsPerMeter,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            pixelsPerMeter,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            anchorPx,
+            anchorPy,
+            0.0,
+            1.0,
         };
 
         // Use the NEAR-CLIPPED projection: fill-extrusion renders with it
@@ -172,8 +188,8 @@ public:
         glDepthFunc(GL_LEQUAL);
         glDepthMask(GL_TRUE);
         glDepthRangef(0.0f, static_cast<GLfloat>(params.depthRangeSize));
-        glDisable(GL_BLEND);      // opaque model; core leaves blend on for translucent pass
-        glDisable(GL_CULL_FACE);  // triangle is single-sided; keep both faces
+        glDisable(GL_BLEND);     // opaque model; core leaves blend on for translucent pass
+        glDisable(GL_CULL_FACE); // triangle is single-sided; keep both faces
         glBindBuffer(GL_ARRAY_BUFFER, buffer);
         glEnableVertexAttribArray(aPos);
         glVertexAttribPointer(aPos, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
@@ -187,7 +203,10 @@ public:
         glUseProgram(static_cast<GLuint>(prevProgram));
         if (prevDepthTest == GL_FALSE) glDisable(GL_DEPTH_TEST);
         if (prevCull == GL_TRUE) glEnable(GL_CULL_FACE);
-        if (prevBlend == GL_TRUE) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+        if (prevBlend == GL_TRUE)
+            glEnable(GL_BLEND);
+        else
+            glDisable(GL_BLEND);
     }
 
     void contextLost() override {
@@ -218,7 +237,9 @@ private:
 
 } // namespace
 
-extern "C" JNIEXPORT jlong JNICALL
-Java_org_maplibre_gltf_GltfSpikeLayer_nativeCreateHost(JNIEnv*, jobject, jdouble lat, jdouble lng) {
+extern "C" JNIEXPORT jlong JNICALL Java_org_maplibre_gltf_GltfSpikeLayer_nativeCreateHost(JNIEnv*,
+                                                                                          jobject,
+                                                                                          jdouble lat,
+                                                                                          jdouble lng) {
     return reinterpret_cast<jlong>(new GltfSpikeLayer(lat, lng));
 }

@@ -21,17 +21,28 @@ namespace {
 
 const char* cgltfResultName(cgltf_result r) {
     switch (r) {
-        case cgltf_result_success: return "success";
-        case cgltf_result_data_too_short: return "data too short";
-        case cgltf_result_unknown_format: return "unknown format";
-        case cgltf_result_invalid_json: return "invalid json";
-        case cgltf_result_invalid_gltf: return "invalid gltf";
-        case cgltf_result_invalid_options: return "invalid options";
-        case cgltf_result_file_not_found: return "file not found";
-        case cgltf_result_io_error: return "io error";
-        case cgltf_result_out_of_memory: return "out of memory";
-        case cgltf_result_legacy_gltf: return "legacy gltf (1.0) unsupported";
-        default: return "unknown error";
+        case cgltf_result_success:
+            return "success";
+        case cgltf_result_data_too_short:
+            return "data too short";
+        case cgltf_result_unknown_format:
+            return "unknown format";
+        case cgltf_result_invalid_json:
+            return "invalid json";
+        case cgltf_result_invalid_gltf:
+            return "invalid gltf";
+        case cgltf_result_invalid_options:
+            return "invalid options";
+        case cgltf_result_file_not_found:
+            return "file not found";
+        case cgltf_result_io_error:
+            return "io error";
+        case cgltf_result_out_of_memory:
+            return "out of memory";
+        case cgltf_result_legacy_gltf:
+            return "legacy gltf (1.0) unsupported";
+        default:
+            return "unknown error";
     }
 }
 
@@ -150,9 +161,12 @@ bool appendPrimitive(Model& model,
     const cgltf_accessor* uv = nullptr;
     for (cgltf_size i = 0; i < prim.attributes_count; ++i) {
         const cgltf_attribute& attr = prim.attributes[i];
-        if (attr.type == cgltf_attribute_type_position) pos = attr.data;
-        else if (attr.type == cgltf_attribute_type_normal) normal = attr.data;
-        else if (attr.type == cgltf_attribute_type_texcoord && attr.index == 0) uv = attr.data;
+        if (attr.type == cgltf_attribute_type_position)
+            pos = attr.data;
+        else if (attr.type == cgltf_attribute_type_normal)
+            normal = attr.data;
+        else if (attr.type == cgltf_attribute_type_texcoord && attr.index == 0)
+            uv = attr.data;
     }
     if (!pos) {
         outError = "primitive has no POSITION attribute";
@@ -247,8 +261,7 @@ void buildAnimChannels(Model& model, cgltf_data* data) {
 
             const cgltf_accessor* input = sampler.input;
             ac.times.resize(input->count);
-            for (cgltf_size k = 0; k < input->count; ++k)
-                cgltf_accessor_read_float(input, k, &ac.times[k], 1);
+            for (cgltf_size k = 0; k < input->count; ++k) cgltf_accessor_read_float(input, k, &ac.times[k], 1);
 
             const cgltf_accessor* output = sampler.output;
             int components = (ac.path == AnimChannel::Rotation) ? 4 : 3;
@@ -261,13 +274,13 @@ void buildAnimChannels(Model& model, cgltf_data* data) {
     }
 }
 
-void buildSceneDrawables(Model& model, cgltf_data* data,
+void buildSceneDrawables(Model& model,
+                         cgltf_data* data,
                          const std::unordered_map<const cgltf_material*, int>& materialIndex,
                          std::string& outError) {
     // Map cgltf_node* to index
     std::unordered_map<const cgltf_node*, int> nodeToIdx;
-    for (cgltf_size i = 0; i < data->nodes_count; ++i)
-        nodeToIdx[&data->nodes[i]] = static_cast<int>(i);
+    for (cgltf_size i = 0; i < data->nodes_count; ++i) nodeToIdx[&data->nodes[i]] = static_cast<int>(i);
 
     const cgltf_scene* scene = data->scene ? data->scene : (data->scenes_count > 0 ? &data->scenes[0] : nullptr);
     if (!scene) {
@@ -295,15 +308,13 @@ void buildSceneDrawables(Model& model, cgltf_data* data,
             }
             for (cgltf_size c = 0; c < node->children_count; ++c) {
                 auto it = nodeToIdx.find(node->children[c]);
-                if (it != nodeToIdx.end())
-                    traverse(node->children[c], it->second, world);
+                if (it != nodeToIdx.end()) traverse(node->children[c], it->second, world);
             }
         };
 
     for (cgltf_size n = 0; n < scene->nodes_count; ++n) {
         auto it = nodeToIdx.find(scene->nodes[n]);
-        if (it != nodeToIdx.end())
-            traverse(scene->nodes[n], it->second, identity());
+        if (it != nodeToIdx.end()) traverse(scene->nodes[n], it->second, identity());
     }
 }
 
@@ -336,7 +347,8 @@ std::unique_ptr<Model> buildModel(cgltf_data* data, const std::string& basePath,
             const auto& pbr = src.pbr_metallic_roughness;
             std::memcpy(mat.baseColorFactor.data(), pbr.base_color_factor, 4 * sizeof(float));
             if (pbr.base_color_texture.texture) {
-                mat.baseColorTexture = decodeTexture(*model, textureCache, pbr.base_color_texture.texture->image, basePath);
+                mat.baseColorTexture = decodeTexture(
+                    *model, textureCache, pbr.base_color_texture.texture->image, basePath);
             }
         }
         materialIndex.emplace(&src, static_cast<int>(model->materials.size()));
@@ -403,64 +415,79 @@ std::unique_ptr<Model> loadModelFromMemory(const uint8_t* bytes,
 namespace {
 
 std::array<double, 4> quatSlerp(const std::array<double, 4>& a, const std::array<double, 4>& b, double t) {
-    double dot = a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3];
+    double dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
     std::array<double, 4> bAdj = b;
-    if (dot < 0) { dot = -dot; for (int i=0;i<4;++i) bAdj[i] = -bAdj[i]; }
+    if (dot < 0) {
+        dot = -dot;
+        for (int i = 0; i < 4; ++i) bAdj[i] = -bAdj[i];
+    }
     if (dot > 0.9995) {
-        std::array<double,4> r;
-        for (int i=0;i<4;++i) r[i] = a[i] + t*(bAdj[i]-a[i]);
-        double len = std::sqrt(r[0]*r[0]+r[1]*r[1]+r[2]*r[2]+r[3]*r[3]);
-        if (len > 0) for (int i=0;i<4;++i) r[i] /= len;
+        std::array<double, 4> r;
+        for (int i = 0; i < 4; ++i) r[i] = a[i] + t * (bAdj[i] - a[i]);
+        double len = std::sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2] + r[3] * r[3]);
+        if (len > 0)
+            for (int i = 0; i < 4; ++i) r[i] /= len;
         return r;
     }
     double theta = std::acos(dot);
     double sinTheta = std::sin(theta);
-    double wa = std::sin((1-t)*theta) / sinTheta;
-    double wb = std::sin(t*theta) / sinTheta;
-    std::array<double,4> r;
-    for (int i=0;i<4;++i) r[i] = wa*a[i] + wb*bAdj[i];
+    double wa = std::sin((1 - t) * theta) / sinTheta;
+    double wb = std::sin(t * theta) / sinTheta;
+    std::array<double, 4> r;
+    for (int i = 0; i < 4; ++i) r[i] = wa * a[i] + wb * bAdj[i];
     return r;
 }
 
 // Compose translation * rotation (quaternion) * scale into a 4x4 matrix.
 std::array<double, 16> composeTRS(const std::array<double, 3>& t,
-                                   const std::array<double, 4>& q,
-                                   const std::array<double, 3>& s) {
-    double xx = q[0]*q[0], yy = q[1]*q[1], zz = q[2]*q[2];
-    double xy = q[0]*q[1], xz = q[0]*q[2], xw = q[0]*q[3];
-    double yz = q[1]*q[2], yw = q[1]*q[3], zw = q[2]*q[3];
+                                  const std::array<double, 4>& q,
+                                  const std::array<double, 3>& s) {
+    double xx = q[0] * q[0], yy = q[1] * q[1], zz = q[2] * q[2];
+    double xy = q[0] * q[1], xz = q[0] * q[2], xw = q[0] * q[3];
+    double yz = q[1] * q[2], yw = q[1] * q[3], zw = q[2] * q[3];
 
-    return {
-        s[0]*(1-2*(yy+zz)),   s[0]*2*(xy+zw),       s[0]*2*(xz-yw),       0.0,
-        s[1]*2*(xy-zw),       s[1]*(1-2*(xx+zz)),   s[1]*2*(yz+xw),       0.0,
-        s[2]*2*(xz+yw),       s[2]*2*(yz-xw),       s[2]*(1-2*(xx+yy)),   0.0,
-        t[0],                 t[1],                  t[2],                  1.0
-    };
+    return {s[0] * (1 - 2 * (yy + zz)),
+            s[0] * 2 * (xy + zw),
+            s[0] * 2 * (xz - yw),
+            0.0,
+            s[1] * 2 * (xy - zw),
+            s[1] * (1 - 2 * (xx + zz)),
+            s[1] * 2 * (yz + xw),
+            0.0,
+            s[2] * 2 * (xz + yw),
+            s[2] * 2 * (yz - xw),
+            s[2] * (1 - 2 * (xx + yy)),
+            0.0,
+            t[0],
+            t[1],
+            t[2],
+            1.0};
 }
 
 // Linearly interpolate between two keyframe values.
 // For T/S (3 components) stride=3; for R (4 components) stride=4.
 std::vector<float> lerpValues(const float* a, const float* b, double t, int stride) {
     std::vector<float> r(stride);
-    for (int i = 0; i < stride; ++i)
-        r[i] = static_cast<float>(a[i] + t * (b[i] - a[i]));
+    for (int i = 0; i < stride; ++i) r[i] = static_cast<float>(a[i] + t * (b[i] - a[i]));
     return r;
 }
 
 // Find the keyframe bracket for a given time and compute the interpolation factor.
 // Returns {idxA, idxB, t} where t is between 0 and 1.
-struct Bracket { int a; int b; double t; };
+struct Bracket {
+    int a;
+    int b;
+    double t;
+};
 Bracket findBracket(const std::vector<float>& times, double timeSec) {
     const size_t n = times.size();
     if (n == 0) return {0, 0, 0.0};
     if (timeSec <= times[0]) return {0, 0, 0.0};
-    if (timeSec >= times[n-1]) return {static_cast<int>(n-1), static_cast<int>(n-1), 0.0};
+    if (timeSec >= times[n - 1]) return {static_cast<int>(n - 1), static_cast<int>(n - 1), 0.0};
     for (size_t i = 0; i < n - 1; ++i) {
-        if (timeSec >= times[i] && timeSec < times[i+1]) {
-            double t = (times[i+1] > times[i])
-                ? (timeSec - times[i]) / (times[i+1] - times[i])
-                : 0.0;
-            return {static_cast<int>(i), static_cast<int>(i+1), t};
+        if (timeSec >= times[i] && timeSec < times[i + 1]) {
+            double t = (times[i + 1] > times[i]) ? (timeSec - times[i]) / (times[i + 1] - times[i]) : 0.0;
+            return {static_cast<int>(i), static_cast<int>(i + 1), t};
         }
     }
     return {0, 0, 0.0};
@@ -523,8 +550,7 @@ void evaluateAnimation(Model& model, double timeSec) {
 
     // 4. Update drawable transforms
     for (auto& d : model.drawables) {
-        if (d.nodeIndex >= 0 && d.nodeIndex < static_cast<int>(nodeCount))
-            d.transform = worldTransforms[d.nodeIndex];
+        if (d.nodeIndex >= 0 && d.nodeIndex < static_cast<int>(nodeCount)) d.transform = worldTransforms[d.nodeIndex];
     }
 }
 
