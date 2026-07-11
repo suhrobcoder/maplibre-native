@@ -1,6 +1,9 @@
 name: publish-gltf-packages
 
 on:
+  push:
+    tags:
+      - gltf-v*
   workflow_dispatch:
     inputs:
       version:
@@ -31,7 +34,7 @@ jobs:
           ./gradlew
           :MapLibreAndroid:publishOpenglreleasePublicationToGitHubPackagesRepository
           :MapLibreGltfLayer:publishGithubOpenglReleasePublicationToGitHubPackagesRepository
-          -PmaplibreGithubVersion=${{ inputs.version }}
+          -PmaplibreGithubVersion=${{ inputs.version || '13.3.1-gltf.1' }}
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
