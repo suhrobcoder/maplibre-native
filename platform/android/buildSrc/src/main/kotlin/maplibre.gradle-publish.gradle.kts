@@ -27,7 +27,9 @@ androidLibrary.publishing {
 afterEvaluate {
     mavenPublishing {
         publishToMavenCentral(true)
-        signAllPublications()
+        if (!providers.gradleProperty("maplibreGithubVersion").isPresent) {
+            signAllPublications()
+        }
     }
 }
 
