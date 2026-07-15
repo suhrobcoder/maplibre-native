@@ -1,6 +1,7 @@
 package org.maplibre.gltf.test
 
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import android.view.WindowManager
@@ -25,12 +26,13 @@ import kotlin.coroutines.resume
 class GltfBenchmarkActivity : AppCompatActivity() {
     private val TAG = "GltfBenchmark"
     private val anchor = LatLng(52.51870, 13.40600)
-    private val benchmarkDurationMs = 20000
+    private var benchmarkDurationMs = DEFAULT_DURATION_MS
 
     private lateinit var mapView: MapView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        benchmarkDurationMs = intent.getLongExtra(EXTRA_DURATION_MS, DEFAULT_DURATION_MS)
         MapLibre.getInstance(this)
         if (!isDebugBuild()) {
             Toast.makeText(this, "Test app is debug-only", Toast.LENGTH_LONG).show()
@@ -131,13 +133,13 @@ class GltfBenchmarkActivity : AppCompatActivity() {
             LatLng(anchor.latitude - 0.002, anchor.longitude - 0.002),
         )
 
-        val perLegMs = benchmarkDurationMs / places.size
+        val perLegMs = (benchmarkDurationMs / places.size).coerceAtLeast(1L)
         val startTime = System.nanoTime()
         for (place in places) {
             suspendCancellableCoroutine<Unit> { cont ->
                 map.animateCamera(
                     CameraUpdateFactory.newLatLngZoom(place, 16.0),
-                    perLegMs,
+                    perLegMs.toInt(),
                     object : MapLibreMap.CancelableCallback {
                         override fun onCancel() { cont.resume(Unit) }
                         override fun onFinish() { cont.resume(Unit) }
@@ -164,7 +166,17 @@ class GltfBenchmarkActivity : AppCompatActivity() {
         Logger.i(TAG, "=== glTF Benchmark complete ===")
 
         layer.close()
-        setResult(Activity.RESULT_OK)
+        setResult(
+            Activity.RESULT_OK,
+            Intent().apply {
+                putExtra(EXTRA_FRAME_COUNT, frameCount)
+                putExtra(EXTRA_FPS, fps)
+                putExtra(EXTRA_MIN_FPS, if (minFps == Double.MAX_VALUE) 0.0 else minFps)
+                putExtra(EXTRA_AVG_ENCODING_MS, avgEncodingMs)
+                putExtra(EXTRA_AVG_RENDERING_MS, avgRenderingMs)
+                putExtra(EXTRA_AVG_DRAW_CALLS, if (frameCount > 0) totalDrawCalls.toDouble() / frameCount else 0.0)
+            },
+        )
         finish()
     }
 
@@ -177,5 +189,16 @@ class GltfBenchmarkActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         mapView.onSaveInstanceState(outState)
+    }
+
+    private companion object {
+        const val DEFAULT_DURATION_MS = 20_000L
+        const val EXTRA_DURATION_MS = "duration_ms"
+        const val EXTRA_FRAME_COUNT = "frame_count"
+        const val EXTRA_FPS = "fps"
+        const val EXTRA_MIN_FPS = "min_fps"
+        const val EXTRA_AVG_ENCODING_MS = "avg_encoding_ms"
+        const val EXTRA_AVG_RENDERING_MS = "avg_rendering_ms"
+        const val EXTRA_AVG_DRAW_CALLS = "avg_draw_calls"
     }
 }

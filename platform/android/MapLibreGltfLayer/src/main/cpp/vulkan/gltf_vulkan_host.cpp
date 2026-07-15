@@ -2,11 +2,12 @@
 // Mirrors the GLES GltfMultiModelHost in interface and threading contract,
 // but uses Vulkan instead of OpenGL ES 3.0.
 //
-// Push-constant layout (88 bytes total, fits within 128-byte limit):
+// Push-constant layout (92 bytes total, fits within 128-byte limit):
 //   mat4 matrix;      // offset 0,  size 64
 //   vec4 baseColor;   // offset 64, size 16
 //   float alphaCutoff;// offset 80, size 4
 //   float hasTexture; // offset 84, size 4
+//   float darkModeLighting; // offset 88, size 4
 //
 // Descriptor set 0: combined image sampler (binding 0) for the texture.
 //
@@ -50,6 +51,7 @@ struct PushConstants {
     float baseColor[4]; // offset 64, 16 bytes
     float alphaCutoff;  // offset 80, 4 bytes
     float hasTexture;   // offset 84, 4 bytes — 1.0 if textured, 0.0 otherwise
+    float darkModeLighting; // offset 88, 4 bytes — 1.0 for dark-mode lighting
 };
 static_assert(sizeof(PushConstants) <= 128, "Push constants exceed device limit");
 
@@ -64,7 +66,8 @@ using VkUniq = vk::UniqueHandle<T, vk::detail::DispatchLoaderDynamic>;
 // ---------------------------------------------------------------------------
 struct Placement {
     double lat = 0, lng = 0;
-    double scale = 1, rotationDeg = 0, altitudeM = 0;
+    double scale = 1, bearingRad = 0, altitudeM = 0;
+    double offsetEastM = 0, offsetNorthM = 0, offsetUpM = 0;
 };
 
 struct LayerState {
@@ -74,6 +77,7 @@ struct LayerState {
     };
     std::mutex mutex;
     std::map<std::string, Instance> instances;
+    bool darkModeLighting = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -197,8 +201,10 @@ public:
             Placement placement;
         };
         std::vector<DrawItem> items;
+        bool darkModeLighting = false;
         {
             std::lock_guard<std::mutex> lock(state->mutex);
+            darkModeLighting = state->darkModeLighting;
             items.reserve(state->instances.size());
             for (const auto& [id, inst] : state->instances) {
                 items.push_back({inst.model, inst.placement});
@@ -265,8 +271,10 @@ public:
 
             // glTF axis swap + placement transform (same math as GLES host)
             const double s = item.placement.scale;
-            const double r = item.placement.rotationDeg * kPi / 180.0;
+            const double r = item.placement.bearingRad;
             const double cr = std::cos(r), sr = std::sin(r);
+            const double offsetEast = item.placement.offsetEastM * cr + item.placement.offsetNorthM * sr;
+            const double offsetSouth = item.placement.offsetEastM * sr - item.placement.offsetNorthM * cr;
             const std::array<double, 16> placement = {
                 s * cr,
                 s * sr,
@@ -280,9 +288,9 @@ public:
                 s * cr,
                 0.0,
                 0.0,
-                0.0,
-                0.0,
-                item.placement.altitudeM,
+                offsetEast,
+                offsetSouth,
+                item.placement.altitudeM + item.placement.offsetUpM,
                 1.0,
             };
 
@@ -306,7 +314,7 @@ public:
                     blendCalls.push_back({&gd, item.model.get(), base, c[2] / w});
                     continue;
                 }
-                drawOne(gd, mat, base, preRot);
+                drawOne(gd, mat, base, preRot, darkModeLighting);
             }
         }
 
@@ -317,7 +325,7 @@ public:
             });
             for (const auto& bc : blendCalls) {
                 const Material& mat = bc.gd->material >= 0 ? bc.model->materials[bc.gd->material] : kDefaultMaterial;
-                drawOne(*bc.gd, mat, bc.base, preRot);
+                drawOne(*bc.gd, mat, bc.base, preRot, darkModeLighting);
             }
         }
     }
@@ -629,7 +637,11 @@ private:
     // -----------------------------------------------------------------------
     // Issue one indexed draw call
     // -----------------------------------------------------------------------
-    void drawOne(const GpuDrawable& gd, const Material& mat, const std::array<double, 16>& base, float preRot) {
+    void drawOne(const GpuDrawable& gd,
+                 const Material& mat,
+                 const std::array<double, 16>& base,
+                 float preRot,
+                 bool darkModeLighting) {
         if (!cmd || !dev || !disp) return;
         __android_log_print(ANDROID_LOG_DEBUG,
                             LOG_TAG,
@@ -637,7 +649,6 @@ private:
                             gd.indexCount,
                             gd.material,
                             gd.descriptorSet ? 1 : 0);
-
         // Compose MVP = base * node transform
         std::array<double, 16> mvpD;
         mat4Multiply(mvpD, base, gd.transform);
@@ -677,6 +688,7 @@ private:
         std::memcpy(pc.baseColor, mat.baseColorFactor.data(), sizeof(pc.baseColor));
         pc.alphaCutoff = (mat.alphaMode == AlphaMode::Mask) ? mat.alphaCutoff : 0.0f;
         pc.hasTexture = (gd.descriptorSet) ? 1.0f : 0.0f;
+        pc.darkModeLighting = darkModeLighting ? 1.0f : 0.0f;
 
         cmd.pushConstants(*pipelineLayout,
                           vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
@@ -776,8 +788,15 @@ namespace {
 inline LayerState* stateOf(jlong handle) {
     return reinterpret_cast<std::shared_ptr<LayerState>*>(handle)->get();
 }
-inline Placement placementOf(jdouble lat, jdouble lng, jdouble scale, jdouble rotationDeg, jdouble altitudeM) {
-    return Placement{lat, lng, scale, rotationDeg, altitudeM};
+inline Placement placementOf(jdouble lat,
+                             jdouble lng,
+                             jdouble scale,
+                             jdouble bearingRad,
+                             jdouble altitudeM,
+                             jdouble offsetEastM,
+                             jdouble offsetNorthM,
+                             jdouble offsetUpM) {
+    return Placement{lat, lng, scale, bearingRad, altitudeM, offsetEastM, offsetNorthM, offsetUpM};
 }
 } // namespace
 
@@ -798,6 +817,15 @@ extern "C" JNIEXPORT jlong JNICALL Java_org_maplibre_gltf_GltfModelLayer_nativeC
         new GltfVulkanMultiModelHost(*reinterpret_cast<std::shared_ptr<LayerState>*>(stateHandle)));
 }
 
+extern "C" JNIEXPORT void JNICALL Java_org_maplibre_gltf_GltfModelLayer_nativeSetDarkModeLighting(JNIEnv*,
+                                                                                                    jclass,
+                                                                                                    jlong stateHandle,
+                                                                                                    jboolean enabled) {
+    LayerState* state = stateOf(stateHandle);
+    std::lock_guard<std::mutex> lock(state->mutex);
+    state->darkModeLighting = enabled == JNI_TRUE;
+}
+
 extern "C" JNIEXPORT jboolean JNICALL Java_org_maplibre_gltf_GltfModelLayer_nativeAddModel(JNIEnv* env,
                                                                                            jclass,
                                                                                            jlong stateHandle,
@@ -806,8 +834,13 @@ extern "C" JNIEXPORT jboolean JNICALL Java_org_maplibre_gltf_GltfModelLayer_nati
                                                                                            jdouble lat,
                                                                                            jdouble lng,
                                                                                            jdouble scale,
-                                                                                           jdouble rotationDeg,
-                                                                                           jdouble altitudeM) {
+                                                                                           jdouble bearingRad,
+                                                                                           jdouble altitudeM,
+                                                                                           jdouble offsetEastM,
+                                                                                           jdouble offsetNorthM,
+                                                                                           jdouble offsetUpM,
+                                                                                           jfloat,
+                                                                                           jdouble) {
     std::shared_ptr<const Model> model(reinterpret_cast<Model*>(modelHandle));
     const char* idChars = env->GetStringUTFChars(jid, nullptr);
     std::string id(idChars);
@@ -816,7 +849,9 @@ extern "C" JNIEXPORT jboolean JNICALL Java_org_maplibre_gltf_GltfModelLayer_nati
     LayerState* state = stateOf(stateHandle);
     std::lock_guard<std::mutex> lock(state->mutex);
     const auto [it, inserted] = state->instances.emplace(
-        std::move(id), LayerState::Instance{std::move(model), placementOf(lat, lng, scale, rotationDeg, altitudeM)});
+        std::move(id),
+        LayerState::Instance{
+            std::move(model), placementOf(lat, lng, scale, bearingRad, altitudeM, offsetEastM, offsetNorthM, offsetUpM)});
     return inserted ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -828,8 +863,13 @@ extern "C" JNIEXPORT jboolean JNICALL Java_org_maplibre_gltf_GltfModelLayer_nati
                                                                                               jdouble lat,
                                                                                               jdouble lng,
                                                                                               jdouble scale,
-                                                                                              jdouble rotationDeg,
-                                                                                              jdouble altitudeM) {
+                                                                                              jdouble bearingRad,
+                                                                                              jdouble altitudeM,
+                                                                                              jdouble offsetEastM,
+                                                                                              jdouble offsetNorthM,
+                                                                                              jdouble offsetUpM,
+                                                                                              jfloat,
+                                                                                              jdouble) {
     const char* idChars = env->GetStringUTFChars(jid, nullptr);
     std::string id(idChars);
     env->ReleaseStringUTFChars(jid, idChars);
@@ -842,7 +882,9 @@ extern "C" JNIEXPORT jboolean JNICALL Java_org_maplibre_gltf_GltfModelLayer_nati
     const auto src = state->instances.find(sourceId);
     if (src == state->instances.end()) return JNI_FALSE;
     const auto [it, inserted] = state->instances.emplace(
-        std::move(id), LayerState::Instance{src->second.model, placementOf(lat, lng, scale, rotationDeg, altitudeM)});
+        std::move(id),
+        LayerState::Instance{
+            src->second.model, placementOf(lat, lng, scale, bearingRad, altitudeM, offsetEastM, offsetNorthM, offsetUpM)});
     return inserted ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -853,8 +895,13 @@ extern "C" JNIEXPORT jboolean JNICALL Java_org_maplibre_gltf_GltfModelLayer_nati
                                                                                               jdouble lat,
                                                                                               jdouble lng,
                                                                                               jdouble scale,
-                                                                                              jdouble rotationDeg,
-                                                                                              jdouble altitudeM) {
+                                                                                              jdouble bearingRad,
+                                                                                              jdouble altitudeM,
+                                                                                              jdouble offsetEastM,
+                                                                                              jdouble offsetNorthM,
+                                                                                              jdouble offsetUpM,
+                                                                                              jfloat,
+                                                                                              jdouble) {
     const char* idChars = env->GetStringUTFChars(jid, nullptr);
     std::string id(idChars);
     env->ReleaseStringUTFChars(jid, idChars);
@@ -863,7 +910,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_org_maplibre_gltf_GltfModelLayer_nati
     std::lock_guard<std::mutex> lock(state->mutex);
     const auto it = state->instances.find(id);
     if (it == state->instances.end()) return JNI_FALSE;
-    it->second.placement = placementOf(lat, lng, scale, rotationDeg, altitudeM);
+    it->second.placement = placementOf(lat, lng, scale, bearingRad, altitudeM, offsetEastM, offsetNorthM, offsetUpM);
     return JNI_TRUE;
 }
 

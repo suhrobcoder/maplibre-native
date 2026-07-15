@@ -1,40 +1,99 @@
 package org.maplibre.gltf.test
 
-import android.animation.ValueAnimator
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
-import android.view.animation.DecelerateInterpolator
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.google.android.material.floatingactionbutton.FloatingActionButton
+import androidx.lifecycle.lifecycleScope
+import java.io.IOException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import kotlin.math.max
+import kotlin.math.min
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.layers.FillExtrusionLayer
 import org.maplibre.android.style.layers.PropertyFactory
-import org.maplibre.gltf.GltfModel
+import org.maplibre.gltf.GltfModelDescriptor
 import org.maplibre.gltf.GltfModelLayer
-import org.maplibre.gltf.ModelOptions
+import org.maplibre.gltf.GltfModelRepository
 
-private const val ZOOM_THRESHOLD = 14.0
-private const val FULL_SCALE = 24.0
-private const val FERRIS_SCALE = 1.5
-private const val REVEAL_DURATION_MS = 600L
+private const val MODELS_URL = "https://maps.megago.uz/poi-api/models-3d"
+private const val VIEWPORT_PADDING = 0.25
+
+@Serializable
+private data class ModelsResponse(val data: List<ModelRecord> = emptyList())
+
+@Serializable
+private data class ModelRecord(
+    val id: String,
+    val name: String,
+    val file: String,
+    val latitude: Double,
+    val longitude: Double,
+    val altitude: Double = 0.0,
+    val bearing: Double = 0.0,
+    val scale: Double = 1.0,
+    val offsetEast: Double = 0.0,
+    val offsetNorth: Double = 0.0,
+    val offsetUp: Double = 0.0,
+    val modelUrl: String,
+) {
+    fun toDescriptorOrNull(): GltfModelDescriptor? {
+        val values = listOf(
+            latitude,
+            longitude,
+            altitude,
+            bearing,
+            scale,
+            offsetEast,
+            offsetNorth,
+            offsetUp,
+        )
+        if (id.isBlank() || modelUrl.isBlank() || !modelUrl.startsWith("https://") ||
+            !values.all(Double::isFinite) || scale <= 0.0 || latitude !in -90.0..90.0 ||
+            longitude !in -180.0..180.0
+        ) {
+            return null
+        }
+        return GltfModelDescriptor(
+            id,
+            name,
+            file,
+            latitude,
+            longitude,
+            altitude,
+            bearing,
+            scale,
+            offsetEast,
+            offsetNorth,
+            offsetUp,
+            modelUrl,
+        )
+    }
+}
 
 class GltfSpikeActivity : AppCompatActivity() {
     private lateinit var maplibreMap: MapLibreMap
     private lateinit var mapView: MapView
-    private lateinit var fab: FloatingActionButton
     private var gltfLayer: GltfModelLayer? = null
-    private var revealAnimator: ValueAnimator? = null
-    private var cameraListener: MapLibreMap.OnCameraMoveListener? = null
-    private var wasVisible = false
-
-    private val nestAnchor = LatLng(41.55379195503115, 60.62949260146542)
-    private val ferrisAnchor = LatLng(41.551861350301806, 60.61369321962073)
+    private var repository: GltfModelRepository? = null
+    private var cameraIdleListener: MapLibreMap.OnCameraIdleListener? = null
+    private var catalog: Map<String, GltfModelDescriptor> = emptyMap()
+    private val desiredIds = mutableSetOf<String>()
+    private val sourceByUrl = mutableMapOf<String, String>()
+    private val metadataClient = OkHttpClient()
+    private val json = Json { ignoreUnknownKeys = true }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -49,86 +108,128 @@ class GltfSpikeActivity : AppCompatActivity() {
         mapView.onCreate(savedInstanceState)
         mapView.getMapAsync { map ->
             maplibreMap = map
-            map.setStyle(
-                "https://tiles.openfreemap.org/styles/liberty"
-            ) {
+            map.setStyle("https://tiles.openfreemap.org/styles/liberty") {
                 map.cameraPosition = CameraPosition.Builder()
-                    .target(nestAnchor)
+                    .target(LatLng(41.55379195503115, 60.62949260146542))
                     .zoom(17.0)
                     .tilt(60.0)
                     .build()
-                initFab()
+                setupRemoteLayer()
             }
         }
     }
 
-    private fun initFab() {
-        fab = findViewById(R.id.fab)
-        fab.setOnClickListener { toggleLayer() }
-    }
-
-    private fun isDebugBuild(): Boolean {
-        return (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
-    }
-
-    private fun toggleLayer() {
+    private fun setupRemoteLayer() {
         val style = maplibreMap.style ?: return
-        if (gltfLayer != null) {
-            removeLayer()
+        val layer = GltfModelLayer("gltf-remote-models")
+        layer.darkModeLightingEnabled = false
+        addLayerBelowBuildings(style, layer)
+        gltfLayer = layer
+        repository = GltfModelRepository(this)
+        cameraIdleListener = MapLibreMap.OnCameraIdleListener { refreshVisibleModels() }
+        cameraIdleListener?.let(maplibreMap::addOnCameraIdleListener)
+
+        lifecycleScope.launch {
+            catalog = fetchCatalog()
+                .mapNotNull { it.toDescriptorOrNull() }
+                .distinctBy { it.id }
+                .associateBy { it.id }
+            refreshVisibleModels()
+        }
+        Toast.makeText(this, "Loading nearby 3D models", Toast.LENGTH_SHORT).show()
+    }
+
+    private suspend fun fetchCatalog(): List<ModelRecord> = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url(MODELS_URL).build()
+        metadataClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("Models endpoint returned HTTP ${response.code}")
+            val body = response.body?.string() ?: throw IOException("Models endpoint returned an empty body")
+            json.decodeFromString<ModelsResponse>(body).data
+        }
+    }
+
+    private fun refreshVisibleModels() {
+        val layer = gltfLayer ?: return
+        if (catalog.isEmpty()) return
+
+        val bounds = paddedBounds(maplibreMap.projection.visibleRegion.latLngBounds)
+        val visible = catalog.values.filter { bounds.contains(LatLng(it.latitude, it.longitude)) }
+        desiredIds.clear()
+        desiredIds.addAll(visible.map { it.id })
+
+        layer.modelIds.filterNot(desiredIds::contains).forEach { id -> layer.removeModel(id) }
+        sourceByUrl.entries.removeIf { (_, sourceId) -> sourceId !in layer.modelIds }
+
+        visible.groupBy { it.modelUrl }.values.forEach { group ->
+            lifecycleScope.launch { ensureGroupLoaded(group) }
+        }
+        maplibreMap.triggerRepaint()
+    }
+
+    private suspend fun ensureGroupLoaded(group: List<GltfModelDescriptor>) {
+        val layer = gltfLayer ?: return
+        val repo = repository ?: return
+        val url = group.firstOrNull()?.modelUrl ?: return
+        val currentGroup = group.filter { desiredIds.contains(it.id) }
+        if (currentGroup.isEmpty()) return
+
+        val existingSource = sourceByUrl[url]?.takeIf { it in layer.modelIds }
+        if (existingSource != null) {
+            applyGroup(layer, currentGroup, existingSource)
             return
         }
-        val layer = GltfModelLayer("gltf-nest")
-        addLayerBelowBuildings(style, layer)
-        val nestModel = GltfModel.fromAsset(this, "nest_one.glb")
-        layer.addModel("nest", nestModel, nestAnchor, ModelOptions(scale = FULL_SCALE, heightScale = 0.0))
-        val ferrisModel = GltfModel.fromAsset(this, "ferris_wheel.glb")
-        layer.addModel("ferris", ferrisModel, ferrisAnchor, ModelOptions(scale = FERRIS_SCALE))
-        gltfLayer = layer
-        wasVisible = false
 
-        cameraListener = MapLibreMap.OnCameraMoveListener {
-            checkZoom(maplibreMap.cameraPosition.zoom)
-        }
-        maplibreMap.addOnCameraMoveListener(cameraListener!!)
-        checkZoom(maplibreMap.cameraPosition.zoom)
-
-        Toast.makeText(this, "Nest One — zoom past 14 to reveal", Toast.LENGTH_LONG).show()
-    }
-
-    private fun removeLayer() {
-        revealAnimator?.cancel()
-        revealAnimator = null
-        cameraListener?.let { maplibreMap.removeOnCameraMoveListener(it) }
-        cameraListener = null
-        val style = maplibreMap.style ?: return
-        val existing = gltfLayer ?: return
-        style.removeLayer(existing.layer)
-        existing.close()
-        gltfLayer = null
-    }
-
-    private fun checkZoom(zoom: Double) {
-        val visible = zoom >= ZOOM_THRESHOLD
-        if (visible == wasVisible) return
-        wasVisible = visible
-        animateReveal(visible)
-    }
-
-    private fun animateReveal(show: Boolean) {
-        revealAnimator?.cancel()
-        val layer = gltfLayer ?: return
-        val from = if (show) 0f else 1f
-        val to = if (show) 1f else 0f
-        revealAnimator = ValueAnimator.ofFloat(from, to).apply {
-            duration = REVEAL_DURATION_MS
-            interpolator = DecelerateInterpolator()
-            addUpdateListener { anim ->
-                val t = anim.animatedValue as Float
-                layer.updateModel("nest", options = ModelOptions(scale = FULL_SCALE, heightScale = t.toDouble()))
-                maplibreMap.triggerRepaint()
+        repo.getModel(url).onSuccess { model ->
+            val stillNeeded = currentGroup.filter { desiredIds.contains(it.id) }
+            if (stillNeeded.isEmpty()) {
+                model.close()
+                return@onSuccess
             }
-            start()
+            val sourceId = sourceByUrl[url]?.takeIf { it in layer.modelIds }
+            if (sourceId != null) {
+                model.close()
+                applyGroup(layer, stillNeeded, sourceId)
+                return@onSuccess
+            }
+            val source = stillNeeded.first()
+            layer.addModel(source, model)
+            sourceByUrl[url] = source.id
+            applyGroup(layer, stillNeeded, source.id)
+            maplibreMap.triggerRepaint()
         }
+    }
+
+    private fun applyGroup(
+        layer: GltfModelLayer,
+        descriptors: List<GltfModelDescriptor>,
+        sourceId: String,
+    ) {
+        descriptors.forEach { descriptor ->
+            when {
+                descriptor.id == sourceId -> layer.updateModel(descriptor)
+                descriptor.id in layer.modelIds -> layer.updateModel(descriptor)
+                else -> layer.addInstance(descriptor, sourceId)
+            }
+        }
+    }
+
+    private fun paddedBounds(bounds: LatLngBounds): LatLngBounds {
+        val latitudePadding = (bounds.latitudeNorth - bounds.latitudeSouth) * VIEWPORT_PADDING
+        val longitudePadding = (bounds.longitudeEast - bounds.longitudeWest) * VIEWPORT_PADDING
+        return LatLngBounds.Builder()
+            .include(
+                LatLng(
+                    min(90.0, bounds.latitudeNorth + latitudePadding),
+                    min(180.0, bounds.longitudeEast + longitudePadding),
+                ),
+            )
+            .include(
+                LatLng(
+                    max(-90.0, bounds.latitudeSouth - latitudePadding),
+                    max(-180.0, bounds.longitudeWest - longitudePadding),
+                ),
+            )
+            .build()
     }
 
     private fun addLayerBelowBuildings(style: Style, layer: GltfModelLayer) {
@@ -143,18 +244,29 @@ class GltfSpikeActivity : AppCompatActivity() {
         }
     }
 
+    private fun isDebugBuild(): Boolean =
+        applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+
     override fun onStart() { super.onStart(); mapView.onStart() }
     override fun onResume() { super.onResume(); mapView.onResume() }
     override fun onPause() { super.onPause(); mapView.onPause() }
     override fun onStop() { super.onStop(); mapView.onStop() }
     override fun onLowMemory() { super.onLowMemory(); mapView.onLowMemory() }
+
     override fun onDestroy() {
-        revealAnimator?.cancel()
-        cameraListener?.let { maplibreMap.removeOnCameraMoveListener(it) }
+        if (::maplibreMap.isInitialized) {
+            cameraIdleListener?.let(maplibreMap::removeOnCameraIdleListener)
+            maplibreMap.style?.let { style -> gltfLayer?.let { style.removeLayer(it.layer) } }
+        }
         gltfLayer?.close()
+        repository?.close()
+        metadataClient.dispatcher.cancelAll()
+        metadataClient.dispatcher.executorService.shutdown()
+        metadataClient.connectionPool.evictAll()
         super.onDestroy()
         mapView.onDestroy()
     }
+
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         mapView.onSaveInstanceState(outState)

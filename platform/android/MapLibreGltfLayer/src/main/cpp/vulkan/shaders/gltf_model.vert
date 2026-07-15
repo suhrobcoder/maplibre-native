@@ -9,6 +9,7 @@ layout(push_constant) uniform PushConstants {
     vec4 baseColor;
     float alphaCutoff;
     float hasTexture;
+    float darkModeLighting;
 } pc;
 
 layout(location = 0) out vec3 v_normal;

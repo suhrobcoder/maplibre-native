@@ -4,7 +4,7 @@ import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.withType
 
 val githubPackagesVersion = providers.gradleProperty("maplibreGithubVersion")
-    .getOrElse("${rootProject.file("VERSION").readText().trim()}-gltf.1")
+    .getOrElse("${rootProject.file("VERSION").readText().trim()}-gltf.3")
 
 extensions.configure<PublishingExtension> {
     repositories {

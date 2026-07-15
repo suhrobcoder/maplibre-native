@@ -14,6 +14,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -38,12 +39,10 @@ def find_glslang() -> str:
 
 def compile_spirv(glslang: str, src: Path) -> bytes:
     """Compile a GLSL shader to SPIR-V binary and return the bytes."""
-    result = subprocess.run(
-        [glslang, "-V", "-o", "-", str(src)],
-        capture_output=True,
-        check=True,
-    )
-    return result.stdout
+    with tempfile.NamedTemporaryFile(suffix=".spv") as output:
+        subprocess.run([glslang, "-V", "-o", output.name, str(src)], check=True)
+        output.seek(0)
+        return output.read()
 
 
 def to_c_array(name: str, data: bytes) -> str:

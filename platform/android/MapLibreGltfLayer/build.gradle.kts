@@ -73,13 +73,17 @@ dependencies {
     //   implementation("org.maplibre.gl:android-sdk:11.0.0")
     compileOnly(project(":MapLibreAndroid"))
     implementation(libs.supportAnnotations)
+    implementation(libs.okhttp3)
+    implementation(libs.kotlinxCoroutinesCore)
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.testRunner)
     androidTestImplementation(libs.testRules)
+    androidTestImplementation(libs.okhttp3)
+    androidTestImplementation(libs.mockwebserver)
 }
 
 val githubPackagesVersion = providers.gradleProperty("maplibreGithubVersion")
-    .getOrElse("${rootProject.file("VERSION").readText().trim()}-gltf.1")
+    .getOrElse("${rootProject.file("VERSION").readText().trim()}-gltf.3")
 
 group = "org.maplibre.gltf"
 version = githubPackagesVersion

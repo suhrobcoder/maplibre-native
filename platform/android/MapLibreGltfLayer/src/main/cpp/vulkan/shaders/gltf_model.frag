@@ -10,6 +10,7 @@ layout(push_constant) uniform PushConstants {
     vec4 baseColor;
     float alphaCutoff;
     float hasTexture;
+    float darkModeLighting;
 } pc;
 
 layout(set = 0, binding = 0) uniform sampler2D u_texture;
@@ -21,6 +22,10 @@ void main() {
     }
     if (pc.alphaCutoff > 0.0 && color.a < pc.alphaCutoff) {
         discard;
+    }
+    if (pc.darkModeLighting < 0.5) {
+        fragColor = color;
+        return;
     }
     vec3 n = normalize(v_normal);
     vec3 light = normalize(vec3(0.4, 0.3, 0.85));

@@ -40,8 +40,25 @@ class GltfModelLayer(id: String) : Closeable {
 
     // Kotlin-side mirror of placements so partial updates can fill in the
     // unchanged half. Guarded by synchronized(this).
-    private data class Entry(var position: LatLng, var options: ModelOptions)
+    private data class Entry(
+        var position: LatLng,
+        var options: ModelOptions,
+        var bearingRadians: Double,
+        var offsetEast: Double = 0.0,
+        var offsetNorth: Double = 0.0,
+        var offsetUp: Double = 0.0,
+    )
     private val entries = HashMap<String, Entry>()
+    private var darkModeLighting = false
+
+    /** Enables the dim lighting intended for dark-mode map styles. */
+    var darkModeLightingEnabled: Boolean
+        @Synchronized get() = darkModeLighting
+        @Synchronized set(value) {
+            checkOpen()
+            darkModeLighting = value
+            nativeSetDarkModeLighting(statePtr, value)
+        }
 
     /**
      * Adds a model instance. Consumes [model] (its handle becomes closed).
@@ -64,10 +81,29 @@ class GltfModelLayer(id: String) : Closeable {
         nativeAddModel(
             statePtr, modelId, modelPtr,
             position.latitude, position.longitude,
-            options.scale, options.rotationDegrees, options.altitudeMeters,
+            options.scale, Math.toRadians(options.rotationDegrees), options.altitudeMeters,
+            0.0, 0.0, 0.0,
             options.opacity, options.heightScale,
         )
-        entries[modelId] = Entry(position, options)
+        entries[modelId] = Entry(position, options, Math.toRadians(options.rotationDegrees))
+    }
+
+    /** Adds a model using the full remote-model descriptor. Consumes [model]. */
+    @Synchronized
+    fun addModel(descriptor: GltfModelDescriptor, model: GltfModel) {
+        checkOpen()
+        val modelPtr = model.nativePtr
+        check(modelPtr != 0L) { "GltfModel is closed" }
+        require(!entries.containsKey(descriptor.id)) { "model id already exists: ${descriptor.id}" }
+        model.nativePtr = 0L
+        nativeAddModel(
+            statePtr, descriptor.id, modelPtr,
+            descriptor.latitude, descriptor.longitude,
+            descriptor.scale, descriptor.bearing, descriptor.altitude,
+            descriptor.offsetEast, descriptor.offsetNorth, descriptor.offsetUp,
+            1.0f, 1.0,
+        )
+        entries[descriptor.id] = descriptor.entry()
     }
 
     /**
@@ -89,10 +125,27 @@ class GltfModelLayer(id: String) : Closeable {
         nativeAddInstance(
             statePtr, instanceId, sourceModelId,
             position.latitude, position.longitude,
-            options.scale, options.rotationDegrees, options.altitudeMeters,
+            options.scale, Math.toRadians(options.rotationDegrees), options.altitudeMeters,
+            0.0, 0.0, 0.0,
             options.opacity, options.heightScale,
         )
-        entries[instanceId] = Entry(position, options)
+        entries[instanceId] = Entry(position, options, Math.toRadians(options.rotationDegrees))
+    }
+
+    /** Adds a descriptor placement that shares the GPU model of [sourceModelId]. */
+    @Synchronized
+    fun addInstance(descriptor: GltfModelDescriptor, sourceModelId: String) {
+        checkOpen()
+        require(!entries.containsKey(descriptor.id)) { "model id already exists: ${descriptor.id}" }
+        require(entries.containsKey(sourceModelId)) { "no such model: $sourceModelId" }
+        nativeAddInstance(
+            statePtr, descriptor.id, sourceModelId,
+            descriptor.latitude, descriptor.longitude,
+            descriptor.scale, descriptor.bearing, descriptor.altitude,
+            descriptor.offsetEast, descriptor.offsetNorth, descriptor.offsetUp,
+            1.0f, 1.0,
+        )
+        entries[descriptor.id] = descriptor.entry()
     }
 
     /**
@@ -112,14 +165,44 @@ class GltfModelLayer(id: String) : Closeable {
         val entry = entries[modelId] ?: return false
         val newPosition = position ?: entry.position
         val newOptions = options ?: entry.options
+        val newBearing = if (options == null) entry.bearingRadians else Math.toRadians(newOptions.rotationDegrees)
+        val newOffsetEast = if (options == null) entry.offsetEast else 0.0
+        val newOffsetNorth = if (options == null) entry.offsetNorth else 0.0
+        val newOffsetUp = if (options == null) entry.offsetUp else 0.0
         nativeUpdateModel(
             statePtr, modelId,
             newPosition.latitude, newPosition.longitude,
-            newOptions.scale, newOptions.rotationDegrees, newOptions.altitudeMeters,
+            newOptions.scale, newBearing, newOptions.altitudeMeters,
+            newOffsetEast, newOffsetNorth, newOffsetUp,
             newOptions.opacity, newOptions.heightScale,
         )
         entry.position = newPosition
         entry.options = newOptions
+        entry.bearingRadians = newBearing
+        entry.offsetEast = newOffsetEast
+        entry.offsetNorth = newOffsetNorth
+        entry.offsetUp = newOffsetUp
+        return true
+    }
+
+    /** Updates an existing descriptor placement without changing its model. */
+    @Synchronized
+    fun updateModel(descriptor: GltfModelDescriptor): Boolean {
+        checkOpen()
+        val entry = entries[descriptor.id] ?: return false
+        nativeUpdateModel(
+            statePtr, descriptor.id,
+            descriptor.latitude, descriptor.longitude,
+            descriptor.scale, descriptor.bearing, descriptor.altitude,
+            descriptor.offsetEast, descriptor.offsetNorth, descriptor.offsetUp,
+            1.0f, 1.0,
+        )
+        entry.position = LatLng(descriptor.latitude, descriptor.longitude)
+        entry.options = descriptor.options()
+        entry.bearingRadians = descriptor.bearing
+        entry.offsetEast = descriptor.offsetEast
+        entry.offsetNorth = descriptor.offsetNorth
+        entry.offsetUp = descriptor.offsetUp
         return true
     }
 
@@ -152,6 +235,21 @@ class GltfModelLayer(id: String) : Closeable {
 
     private fun checkOpen() = check(statePtr != 0L) { "GltfModelLayer is closed" }
 
+    private fun GltfModelDescriptor.entry() = Entry(
+        position = LatLng(latitude, longitude),
+        options = options(),
+        bearingRadians = bearing,
+        offsetEast = offsetEast,
+        offsetNorth = offsetNorth,
+        offsetUp = offsetUp,
+    )
+
+    private fun GltfModelDescriptor.options() = ModelOptions(
+        scale = scale,
+        rotationDegrees = Math.toDegrees(bearing),
+        altitudeMeters = altitude,
+    )
+
     private companion object {
         init {
             System.loadLibrary("maplibre-gltf-layer")
@@ -160,22 +258,26 @@ class GltfModelLayer(id: String) : Closeable {
         @JvmStatic private external fun nativeCreateState(): Long
         @JvmStatic private external fun nativeDestroyState(stateHandle: Long)
         @JvmStatic private external fun nativeCreateHost(stateHandle: Long): Long
+        @JvmStatic private external fun nativeSetDarkModeLighting(stateHandle: Long, enabled: Boolean)
 
         @JvmStatic private external fun nativeAddModel(
             stateHandle: Long, id: String, modelHandle: Long,
-            lat: Double, lng: Double, scale: Double, rotationDeg: Double, altitudeM: Double,
+            lat: Double, lng: Double, scale: Double, bearingRad: Double, altitudeM: Double,
+            offsetEastM: Double, offsetNorthM: Double, offsetUpM: Double,
             opacity: Float, heightScale: Double,
         ): Boolean
 
         @JvmStatic private external fun nativeAddInstance(
             stateHandle: Long, id: String, sourceId: String,
-            lat: Double, lng: Double, scale: Double, rotationDeg: Double, altitudeM: Double,
+            lat: Double, lng: Double, scale: Double, bearingRad: Double, altitudeM: Double,
+            offsetEastM: Double, offsetNorthM: Double, offsetUpM: Double,
             opacity: Float, heightScale: Double,
         ): Boolean
 
         @JvmStatic private external fun nativeUpdateModel(
             stateHandle: Long, id: String,
-            lat: Double, lng: Double, scale: Double, rotationDeg: Double, altitudeM: Double,
+            lat: Double, lng: Double, scale: Double, bearingRad: Double, altitudeM: Double,
+            offsetEastM: Double, offsetNorthM: Double, offsetUpM: Double,
             opacity: Float, heightScale: Double,
         ): Boolean
 

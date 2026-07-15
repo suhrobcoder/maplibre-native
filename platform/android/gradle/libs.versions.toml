@@ -60,6 +60,7 @@ appCenter = { group = "com.microsoft.appcenter", name = "espresso-test-extension
 commonsIO = { group = "commons-io", name = "commons-io", version.ref = "commonsIO" }
 timber = { group = "com.jakewharton.timber", name = "timber", version.ref = "timber" }
 okhttp3 = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "okhttp" }
 leakCanary = { group = "com.squareup.leakcanary", name = "leakcanary-android", version.ref = "leakCanary" }
 
 lint = { group = "com.android.tools.lint", name = "lint", version.ref = "lint" }

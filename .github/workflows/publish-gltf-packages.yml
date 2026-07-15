@@ -9,7 +9,7 @@ on:
       version:
         description: Immutable package version
         required: true
-        default: 13.3.1-gltf.2
+        default: 13.3.1-gltf.3
         type: string
 
 permissions:
@@ -34,7 +34,7 @@ jobs:
           ./gradlew
           :MapLibreAndroid:publishOpenglreleasePublicationToGitHubPackagesRepository
           :MapLibreGltfLayer:publishGithubOpenglReleasePublicationToGitHubPackagesRepository
-          -PmaplibreGithubVersion=${{ inputs.version || '13.3.1-gltf.2' }}
+          -PmaplibreGithubVersion=${{ inputs.version || '13.3.1-gltf.3' }}
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
